@@ -1,0 +1,14 @@
+[Unit]
+ Description=KlipperLCD Service
+ After=moonraker.service
+
+[Service]
+ Type=simple
+ User=pi
+ Restart=always
+ RestartSec=1
+ ExecStart=/bin/sh -c '/usr/bin/env python3 /home/pi/KlipperLCD/main.py  > /tmp/KlipperLCD.log 2>&1'
+
+[Install]
+ WantedBy=multi-user.target
+
