@@ -230,28 +230,33 @@ class PrinterData:
 	SHORT_BUILD_VERSION = "1.00"
 	CORP_WEBSITE_E = "https://www.klipper3d.org/"
 
-	def __init__(self, API_Key, URL='127.0.0.1', klippy_sock='~/printer_data/comms/klippy.sock'):
-		self.klippy_sock = klippy_sock
-		self.BABY_Z_VAR = 0
-		self.print_speed = 100
-		self.flow_percentage = 100
-		self.led_percentage = 0
-		self.temphot = 0
-		self.tempbed = 0
-		self.HMI_ValueStruct = HMI_value_t()
-		self.HMI_flag = HMI_Flag_t()
+	def __init__(self, API_Key, URL='127.0.0.1', klippy_sock='/home/pi/printer_data/comms/klippy.sock'):
+		self.klippy_sock      = klippy_sock
+		self.BABY_Z_VAR       = 0
+		self.print_speed      = 100
+		self.flow_percentage  = 100
+		self.led_percentage   = 0
+		self.temphot          = 0
+		self.tempbed          = 0
+		self.HMI_ValueStruct  = HMI_value_t()
+		self.HMI_flag         = HMI_Flag_t()
 		self.current_position = xyze_t()
-		self.gcm = None
-		self.z_offset = 0
-		self.thermalManager = {
+		self.gcm              = None
+		self.z_offset         = 0
+		self.thermalManager   = {
 			'temp_bed': {'celsius': 20, 'target': 120},
 			'temp_hotend': [{'celsius': 20, 'target': 120}],
 			'fan_speed': [100]
 		}
-		self.job_Info = None
-		self.file_name = None
+		self.job_Info               = None
+		self.file_name              = None
+		self.status                 = None
+		self.max_velocity           = None
+		self.max_accel              = None
+		self.max_accel_to_decel     = None
+		self.square_corner_velocity = None
+		
 		self.op = MoonrakerSocket(URL, 80, API_Key)
-		self.status = None
 		print(self.op.base_address)
 
 		self.klippy_start()
@@ -322,6 +327,19 @@ class PrinterData:
 						self.current_position.home_z = True
 					else:
 						self.current_position.home_z = False
+				
+				if 'max_velocity' in status['toolhead']:
+					if self.max_velocity != status['toolhead']['max_velocity']:
+						self.max_velocity = status['toolhead']['max_velocity']
+				if 'max_accel' in status['toolhead']:
+					if self.max_accel != status['toolhead']['max_accel']:
+						self.max_accel = status['toolhead']['max_accel']
+				if 'max_accel_to_decel' in status['toolhead']:
+					if self.max_accel_to_decel != status['toolhead']['max_accel_to_decel']:
+						self.max_accel_to_decel = status['toolhead']['max_accel_to_decel']
+				if 'square_corner_velocity' in status['toolhead']:
+					if self.square_corner_velocity != status['toolhead']['square_corner_velocity']:
+						self.square_corner_velocity = status['toolhead']['square_corner_velocity']
 
 			if 'configfile' in status:
 				if 'config' in status['configfile']:
@@ -391,6 +409,7 @@ class PrinterData:
 		self.SHORT_BUILD_VERSION = self.getREST('/machine/update/status?refresh=false')['result']['version_info']['klipper']['version']
 
 		data = self.getREST('/printer/objects/query?toolhead')['result']['status']
+		#print(json.dumps(data, indent=2))
 		toolhead = data['toolhead']
 		volume = toolhead['axis_maximum'] #[x,y,z,w]
 		self.MACHINE_SIZE = "{}x{}x{}".format(
@@ -400,6 +419,10 @@ class PrinterData:
 		)
 		self.X_MAX_POS = int(volume[0])
 		self.Y_MAX_POS = int(volume[1])
+		self.max_velocity           = toolhead['max_velocity']
+		self.max_accel              = toolhead['max_accel']
+		self.max_accel_to_decel     = toolhead['max_accel_to_decel']
+		self.square_corner_velocity = toolhead['square_corner_velocity']
 
 	def GetFiles(self, refresh=False):
 		if not self.files or refresh:
@@ -434,6 +457,7 @@ class PrinterData:
 		self.bed = data['heater_bed'] #temperature, target
 		self.extruder = data['extruder'] #temperature, target
 		self.fan = data['fan']
+		self.toolhead = data['toolhead']
 		Update = False
 		try:
 			if self.thermalManager['temp_bed']['celsius'] != int(self.bed['temperature']):
@@ -454,6 +478,19 @@ class PrinterData:
 			if self.BABY_Z_VAR != self.z_offset:
 				self.BABY_Z_VAR = self.z_offset
 				self.HMI_ValueStruct.offset_value = self.z_offset * 100
+				Update = True
+			
+			if self.max_velocity != self.toolhead['max_velocity']:
+				self.max_velocity = self.toolhead['max_velocity']
+				Update = True
+			if self.max_accel != self.toolhead['max_accel']:
+				self.max_accel = self.toolhead['max_accel']
+				Update = True
+			if self.max_accel_to_decel != self.toolhead['max_accel_to_decel']:
+				self.max_accel_to_decel = self.toolhead['max_accel_to_decel']
+				Update = True
+			if self.square_corner_velocity != self.toolhead['square_corner_velocity']:
+				self.square_corner_velocity = self.toolhead['square_corner_velocity']
 				Update = True
 		except:
 			pass #missing key, shouldn't happen, fixes misses on conditionals ¯\_(ツ)_/¯

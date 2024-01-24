@@ -55,6 +55,11 @@ class _printerData():
     z_pos           = None
     z_offset        = None
     file_name       = None
+    
+    max_velocity           = None
+    max_accel              = None
+    max_accel_to_decel     = None
+    square_corner_velocity = None
 
 class LCDEvents():
     HOME           = 1
@@ -80,6 +85,10 @@ class LCDEvents():
     Z_OFFSET       = 21
     PROBE_COMPLETE = 22
     PROBE_BACK     = 23
+    ACCEL          = 24
+    ACCEL_TO_DECEL = 25
+    VELOCITY       = 26
+    SQUARE_CORNER_VELOCITY = 27
 
 
 class LCD:
@@ -156,7 +165,8 @@ class LCD:
         # Adjusting speed
         self.speed_adjusting = None
         self.speed_unit = 10
-        #self.flow = 100
+        self.adjusting_max = False
+        self.accel_unit = 100
         # Probe /Level mode
         self.probe_mode = False
         # Make sure the serial port closes when you quit the program.
@@ -220,6 +230,16 @@ class LCD:
             self.write("adjustspeed.targetspeed.val=%d" % data.flowrate)
         elif self.speed_adjusting == 'Fan' and data.fan != self.printer.fan:
             self.write("adjustspeed.targetspeed.val=%d" % data.fan)
+
+        if self.adjusting_max:
+            if data.max_accel != self.printer.max_accel:
+                self.write("speed_settings.accel.val=%d" % data.max_accel)
+            if data.max_accel_to_decel != self.printer.max_accel_to_decel:
+                self.write("speed_settings.accel_to_decel.val=%d" % data.max_accel_to_decel)
+            if data.max_velocity != self.printer.max_velocity:
+                self.write("speed_settings.velocity.val=%d" % data.max_velocity)
+            if data.square_corner_velocity != self.printer.square_corner_velocity:
+                self.write("speed_settings.sqr_crnr_vel.val=%d" % int(data.square_corner_velocity*10))
 
         if data.state != self.printer.state:
                 print(data.state)
@@ -433,14 +453,17 @@ class LCD:
             self.temp_unit = 1
             self.speed_unit = 1
             self.move_unit = 0.1
+            self.accel_unit = 10
         elif data[0] == 0x06: # Move 1mm / 5C / 5%
             self.temp_unit = 5
             self.speed_unit = 5
             self.move_unit = 1
+            self.accel_unit = 50
         elif data[0] == 0x07: # Move 10mm / 10C /10%
             self.temp_unit = 10
             self.speed_unit = 10
             self.move_unit = 10
+            self.accel_unit = 100
         elif data[0] == 0x08: # + temp
             if self.adjusting == 'Hotend':
                 self.printer.hotend_target += self.temp_unit
@@ -493,7 +516,58 @@ class LCD:
                 self.printer.fan = fan
             else:
                 print("self.speed_adjusting not recognised %s" % self.speed_adjusting)
+        elif data[0] == 0x42: # Accel/Speed advanced
+            self.speed_unit = 10
+            self.accel_unit = 100
+            self.adjusting_max = True
+            self.write("speed_settings.t4.font=0")
+            self.write("speed_settings.accel.val=%d" % self.printer.max_accel)
+            self.write("speed_settings.accel_to_decel.val=%d" % self.printer.max_accel_to_decel)
+            self.write("speed_settings.velocity.val=%d" % self.printer.max_velocity)
+            self.write("speed_settings.sqr_crnr_vel.val=%d" % int(self.printer.square_corner_velocity*10))
+        elif data[0] == 0x43: # Max acceleration set
+            self.adjusting_max = False
 
+        elif data[0] == 0x11 or data[0] == 0x15: #Accel decrease / increase
+            unit = self.accel_unit
+            if data[0] == 0x11:
+                unit = -self.accel_unit
+            new_accel = self.printer.max_accel + unit
+            self.write("speed_settings.accel.val=%d" % new_accel)
+            
+            self.callback(self.evt.ACCEL, new_accel)
+            self.printer.max_accel = new_accel
+
+        elif data[0] == 0x12 or data[0] == 0x16: #Accel to Decel decrease / increase
+            unit = self.accel_unit
+            if data[0] == 0x12:
+                unit = -self.accel_unit
+            new_accel = self.printer.max_accel_to_decel + unit
+            self.write("speed_settings.accel_to_decel.val=%d" % new_accel)
+            
+            self.callback(self.evt.ACCEL_TO_DECEL, new_accel)
+            self.printer.max_accel_to_decel = new_accel
+
+        elif data[0] == 0x13 or data[0] == 0x17: #Velocity decrease / increase
+            unit = self.speed_unit
+            if data[0] == 0x13:
+                unit = -self.speed_unit
+            new_velocity = self.printer.max_velocity + unit
+            self.write("speed_settings.velocity.val=%d" % new_velocity)
+            
+            self.callback(self.evt.VELOCITY, new_velocity)
+            self.printer.max_velocity = new_velocity
+
+        elif data[0] == 0x14 or data[0] == 0x18: #Square Corner Velozity decrease / increase
+            unit = self.speed_unit/10
+            if data[0] == 0x14:
+                unit = -self.speed_unit/10
+            new_velocity = self.printer.square_corner_velocity + unit
+            print(new_velocity*10)
+            self.write("speed_settings.sqr_crnr_vel.val=%d" % int(new_velocity*10))
+
+            self.callback(self.evt.SQUARE_CORNER_VELOCITY, new_velocity)
+            self.printer.square_corner_velocity = new_velocity
 
         else:
             print("_TempScreen: Not recognised %d" % data[0])
@@ -594,7 +668,7 @@ class LCD:
         elif data[0] == 0x0c:
             self.write("page warn_rdlevel")
         elif data[0] == 0x0d: # Advanced Settings
-            self.write("multiset.plrbutton.val=0") #TODO recovery enabled?
+            self.write("multiset.plrbutton.val=1") #TODO recovery enabled?
             #else self.write("multiset.plrbutton.val=1")
             self.write("page multiset")
 

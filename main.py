@@ -61,6 +61,10 @@ class KlipperLCD ():
             data.z_pos         = self.printer.current_position.z
             data.z_offset      = self.printer.BABY_Z_VAR
             data.file_name     = self.printer.file_name
+            data.max_velocity           = self.printer.max_velocity          
+            data.max_accel              = self.printer.max_accel             
+            data.max_accel_to_decel     = self.printer.max_accel_to_decel    
+            data.square_corner_velocity = self.printer.square_corner_velocity
 
             self.lcd.data_update(data)
                 
@@ -128,7 +132,21 @@ class KlipperLCD ():
             self.printer.set_fan(data)
         elif evt == self.lcd.evt.MOTOR_OFF:
             self.printer.sendGCode('M18')
-        
+        elif evt == self.lcd.evt.ACCEL:
+            #print("SET_VELOCITY_LIMIT ACCEL=%d" % data)
+            self.printer.sendGCode("SET_VELOCITY_LIMIT ACCEL=%d" % data)
+        elif evt == self.lcd.evt.ACCEL_TO_DECEL:
+            #print("SET_VELOCITY_LIMIT ACCEL_TO_DECEL=%d" % data)
+            self.printer.sendGCode("SET_VELOCITY_LIMIT ACCEL_TO_DECEL=%d" % data)
+        elif evt == self.lcd.evt.VELOCITY:
+            #print("SET_VELOCITY_LIMIT VELOCITY=%d" % data)
+            self.printer.sendGCode("SET_VELOCITY_LIMIT VELOCITY=%d" % data)
+        elif evt == self.lcd.evt.SQUARE_CORNER_VELOCITY:
+            #print(data)
+            print("SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=%.1f" % data)
+            self.printer.sendGCode("SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=%.1f" % data)
+        else:
+            print("lcd_callback event not recognised %d" % evt)
 
 if __name__ == "__main__":
     x = KlipperLCD()
