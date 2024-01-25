@@ -177,6 +177,7 @@ class LCD:
         self.probe_mode = False
         # Thumbnail
         self.is_thumbnail_written = False
+        self.askprint = False
         # Make sure the serial port closes when you quit the program.
         atexit.register(self._atexit)
 
@@ -218,18 +219,22 @@ class LCD:
         if eol:
             self.ser.write(bytearray([0xFF, 0xFF, 0xFF]))
 
-    def write_thumbnail(self, img):
-        # Clear screen
+    def clear_thumbnail(self):
         self.write("printpause.cp0.close()")
         self.write("printpause.cp0.aph=0")
         self.write("printpause.va0.txt=\"\"")
-        self.write("printpause.va1.txt=\"\"")        
-        
+        self.write("printpause.va1.txt=\"\"") 
+
+    def write_thumbnail(self, img):
+        # Clear screen
+        self.clear_thumbnail()
+
         # Open as image
         im = Image.open(BytesIO(img))
         width, height = im.size
         if width != 160 or height != 160:
             im = im.resize((160, 160))
+            width, height = im.size
 
         pixels = im.load()
 
@@ -241,6 +246,8 @@ class LCD:
                 g = g >> 2
                 b = b >> 3
                 rgb = (r << 11) | (g << 5) | b
+                if rgb == 0x0000:
+                    rgb = 0x4AF0
                 color16.append(rgb)
 
         output_data = bytearray(height * width * 10)
@@ -265,10 +272,7 @@ class LCD:
             self.error_from_lcd = False 
 
             # Clear screen
-            self.write("printpause.cp0.close()")
-            self.write("printpause.cp0.aph=0")
-            self.write("printpause.va0.txt=\"\"")
-            self.write("printpause.va1.txt=\"\"")    
+            self.clear_thumbnail()   
 
             sleep(0.2)
 
@@ -288,6 +292,10 @@ class LCD:
             self.write("printpause.cp0.write(printpause.va1.txt)")
             self.is_thumbnail_written = True
             print("Write thumbnail to LCD done!")
+        
+        if self.askprint == True:
+            self.write("askprint.cp0.aph=127")
+            self.write("askprint.cp0.write(printpause.va1.txt)")            
 
 
     def data_update(self, data):
@@ -501,6 +509,7 @@ class LCD:
     def _StopPrint(self, data):  
         if data[0] == 0x01 or data[0] == 0xf1:
             self.callback(self.evt.PRINT_STOP)
+            self.write("resumeconfirm.t1.txt=\"Stopping print. Please wait!\"")
         elif data[0] == 0xF0:
             if self.printer.state == "printing":
                 self.write("page printpause")
@@ -888,6 +897,11 @@ class LCD:
         load_len = ((data[0] & 0x00FF) << 8) | ((data[0] & 0xFF00) >> 8)
         self.load_len = load_len
         print(load_len)
+
+    def _Heater1LoadEnter(self, data):  
+        feedrate_e = ((data[0] & 0x00FF) << 8) | ((data[0] & 0xFF00) >> 8)
+        self.feedrate_e = feedrate_e
+        print(feedrate_e)
     
     def _FilamentLoad(self, data):
         if data[0] == 0x01 or data[0] == 0x02: # Load / Unload 
@@ -907,12 +921,6 @@ class LCD:
             self.write("page main")
         else:   
             print("_FilamentLoad: Not recognised %d" % data[0])
-            
-    
-    def _Heater1LoadEnter(self, data):  
-        feedrate_e = ((data[0] & 0x00FF) << 8) | ((data[0] & 0xFF00) >> 8)
-        self.feedrate_e = feedrate_e
-        print(feedrate_e)
     
     def _SelectLanguage(self, data):    
         print("_SelectLanguage: Not recognised %d" % data[0])
@@ -947,14 +955,19 @@ class LCD:
             self.write("leveldata.z_offset.val=%d" % (int)(self.printer.z_offset * 100))
             self.write("page printpause")
             self.write("restFlag2=1")
-            self.write("printpause.cp0.close()")
-            self.write("printpause.cp0.aph=0")
-            self.write("printpause.va0.txt=\"\"")
-            self.write("printpause.va1.txt=\"\"")
+            #self.write("printpause.cp0.close()")
+            #self.write("printpause.cp0.aph=0")
+            #self.write("printpause.va0.txt=\"\"")
+            #self.write("printpause.va1.txt=\"\"")
             self.callback(self.evt.PRINT_START, self.selected_file)
 
         elif data[0] == 0x0A:
-            self.write("page main")
+            if self.askprint:
+                self.askprint = False
+                self.write("page file1")
+            else:
+                self.write("page main")
+            
         else:
             print("_PrintFile: Not recognised %d" % data[0])
     
@@ -964,7 +977,11 @@ class LCD:
             self.selected_file = (data[0] - 1) 
             self.write("askprint.t0.txt=\"%s\"" % self.files[self.selected_file])
             self.write("printpause.t0.txt=\"%s\"" % self.files[self.selected_file])
+            self.write("askprint.cp0.close()")
+            self.write("askprint.cp0.aph=0")
             self.write("page askprint")
+            self.callback(self.evt.THUMBNAIL)
+            self.askprint = True
         else:
             print("_SelectFile: Data not recognised %d" % data[0])
 

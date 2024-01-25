@@ -73,8 +73,16 @@ class KlipperLCD ():
             time.sleep(2)
 
     def show_thumbnail(self):
-        if self.printer.file_path and self.printer.file_name:
-            file = self.printer.file_path + "/" + self.printer.file_name
+        if self.printer.file_path and (self.printer.file_name or self.lcd.files[self.lcd.selected_file]):
+            file_name = ""
+            if self.lcd.files:
+                file_name = self.lcd.files[self.lcd.selected_file]
+            elif self.printer.file_name:
+                file_name = self.printer.file_name
+            else:
+                print("ERROR: gcode file not known")
+            
+            file = self.printer.file_path + "/" + file_name
 
             # Reading file
             print(file)
@@ -102,11 +110,15 @@ class KlipperLCD ():
                 elif thumbnail_found:
                     b64 += line.strip(' \t\n\r;')
         
-            # Decode Base64
-            img = base64.b64decode(b64)        
-            
-            # Write thumbnail to LCD
-            self.lcd.write_thumbnail(img)
+            if len(b64):
+                # Decode Base64
+                img = base64.b64decode(b64)        
+                
+                # Write thumbnail to LCD
+                self.lcd.write_thumbnail(img)
+            else:
+                self.lcd.clear_thumbnail()
+                print("Aborting thumbnail, no image found")
         else:
             print("File path or name to gcode-files missing")
         
@@ -137,7 +149,6 @@ class KlipperLCD ():
             self.printer.openAndPrintFile(data)
             if self.thumbnail_inprogress == False:
                 self.thumbnail_inprogress = True
-                Thread(target=self.show_thumbnail).start()
         elif evt == self.lcd.evt.THUMBNAIL:
             if self.thumbnail_inprogress == False:
                 self.thumbnail_inprogress = True
