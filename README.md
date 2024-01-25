@@ -1,15 +1,25 @@
-# KlipperLCD (for Elegoo Neptune 3 Pro LCD)
+# KlipperLCD (for Elegoo Neptune 3 Pro LCD screen)
 Want to run Klipper on your Neptune 3 Pro? And still want to be able to use your Neptune 3 Pro LCD touch screen?
 
 Take a look at this python service for the Elegoo Neptune 3 Pro LCD! Running together with Klipper3d and Moonraker!
 
+## Look and feel
+<p float="left">
+    <img src="img/boot_screen.PNG" height="400">
+    <img src="img/main_screen.PNG" height="400">
+    <img src="img/about_screen.PNG" height="400">
+</p>
+
 ## Whats needed?
 * A Elegoo Neptune 3 Pro with LCD screen.
 * A Raspberry Pi or similar SBC to run Klipper. I suggest using the [Klipper Installation And Update Helper (KIAUH)](https://github.com/dw-0/kiauh) to setup and install Klipper, Moonraker and the web user interface of choice ([Fluidd](https://docs.fluidd.xyz/)/[Mainsail](https://docs.mainsail.xyz/)).
-* Some re-wiring of the LCD to connect it to one of the UARTs availible on your Raspberry Pi / SBC.
+* Some re-wiring of the LCD screen to connect it to one of the UARTs availible on your Raspberry Pi / SBC or through a USB to UART converter.
 * Then you can follow this guide to enable your Neptune 3 Pro touch screen!
 
 ## Wire the LCD
+When wiring your screen, you can either wire it directly to one of your Raspberry Pi / SBC availible UARTs or you can wire it through a USB to UART converter. Both options are described below, pick the option that suits your needs.
+
+### To a Raspberry Pi UART
 1. Remove the back-cover of the LCD by unscrewing the four screws.
 
 2. Connect the LCD to the Raspberry Pi UART according to the table below:
@@ -21,11 +31,27 @@ Take a look at this python service for the Elegoo Neptune 3 Pro LCD! Running tog
     | GPIO 14 (TXD) | RX  (Green wire)  |
     | GPIO 15 (RXD) | TX (Yellow wire)  |
 
-    <img src="img/rpi_conn.png" height="400">
+    <p float="left">
+        <img src="img/rpi_conn.png" height="400">
+        <img src="img/LCD_conn.png" height="400">
+    </p>
+
+### USB to UART Converter
+Quite simple, just remember to cross RX and TX on the LCD and the USB/UART HW.
+| USB <-> UART HW | LCD               |
+| --------------- | ----------------- |
+| 5V              | 5V  (Black wire)  |
+| GND             | GND (Red wire)    |
+| TXD             | RX  (Green wire)  |
+| RXD             | TX (Yellow wire)  |
+
+<p float="left">
+    <img src="img/USB_conn.png" height="400">
     <img src="img/LCD_conn.png" height="400">
+</p>
 
 ## Update the LCD screen firmware
-1. Copy the LCD screen firmware `LCD/20240123.tft` to the root of a FAT32 formatted micro-SD card.
+1. Copy the LCD screen firmware `LCD/20240125.tft` to the root of a FAT32 formatted micro-SD card.
 2. Make sure the LCD screen is powered off.
 3. Insert the micro-SD card into the LCD screens SD card holder. Back-cover needs to be removed.
 4. Power on the LCD screen and wait for screen to say `Update Successed!`
@@ -34,6 +60,7 @@ A more detailed guide on LCD screen firmware update can be found on the [Elegoo 
 
 
 ## Enable the UART
+> **_Note_**: You can safely skip this section if you wired the display through a USB to UART converter
 ### [Disable Linux serial console](https://www.raspberrypi.org/documentation/configuration/uart.md)
   By default, the primary UART is assigned to the Linux console. If you wish to use the primary UART for other purposes, you must reconfigure Raspberry Pi OS. This can be done by using raspi-config:
 
@@ -84,7 +111,12 @@ class KlipperLCD ():
         ...
         PrinterData('XXXXXX', URL=("127.0.0.1"), klippy_sock='/home/pi/printer_data/comms/klippy.sock')
 ```
-* If your UART is something other than the default `ttyAMA0`, replace the string `"/dev/ttyAMA0"` to match your UART selection.
+* If your UART is something other than the default `ttyAMA0`, replace the string `"/dev/ttyAMA0"` to match your UART selection. 
+
+
+    > **_Note_**: If using a USB to UART converter to connect your screen to Klipper, the converter usually shows up in Linux as `"/dev/ttyUSB0"`.
+
+
 * Or if your Klipper socket is called something else, replace `klippy_sock` string `"/home/pi/printer_data/comms/klippy.sock"` with the path and name of your klipper socket file.
 
 ### Run the code
@@ -112,3 +144,13 @@ Enable the service to automatically start at boot:
     sudo systemctl enable KlipperLCD.service
 
     sudo reboot
+
+## Thumbnails
+KlipperLCD also supports thumbnails!
+
+Follow this guide to enable thumbnails in your slicer: https://klipperscreen.readthedocs.io/en/latest/Thumbnails/
+
+<p float="left">
+    <img src="img/thumb1.png" height="400">
+    <img src="img/thumb2.png" height="400">
+</p>
