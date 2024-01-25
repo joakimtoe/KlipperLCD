@@ -249,6 +249,7 @@ class PrinterData:
 			'fan_speed': [100]
 		}
 		self.job_Info               = None
+		self.file_path              = None
 		self.file_name              = None
 		self.status                 = None
 		self.max_velocity           = None
@@ -289,7 +290,7 @@ class PrinterData:
 	def klippy_callback(self, line):
 		klippyData = json.loads(line)
 		#print("klippy_callback:")
-		#print(json.dumps(klippyData, indent=4, sort_keys=True))
+		#print(json.dumps(klippyData, indent=2))
 		status = None
 		if 'result' in klippyData:
 			if 'status' in klippyData['result']:
@@ -347,6 +348,9 @@ class PrinterData:
 						if 'z_offset' in status['configfile']['config']['bltouch']:
 							if status['configfile']['config']['bltouch']['z_offset']:
 								self.BABY_Z_VAR = float(status['configfile']['config']['bltouch']['z_offset'])
+					if 'virtual_sdcard' in status['configfile']['config']:
+						if 'path' in status['configfile']['config']['virtual_sdcard']:
+							self.file_path = status['configfile']['config']['virtual_sdcard']['path']
 
 	def ishomed(self):
 		if self.current_position.home_x and self.current_position.home_y and self.current_position.home_z:
@@ -446,6 +450,9 @@ class PrinterData:
 		except:
 			print("Exception 431")
 			return False
+
+		#print("update_variable:")
+		#print(json.dumps(data, indent=2))
 
 		self.gcm = data['gcode_move']
 		self.z_offset = self.gcm['homing_origin'][2] #z offset
@@ -560,7 +567,7 @@ class PrinterData:
 
 	def set_flow(self, fl):
 		self.flow_percentage = fl
-		self.sendGCode('M220 S%s' % fl)
+		self.sendGCode('M221 S%d' % fl)
 
 	def set_led(self, led):
 		self.led_percentage = led

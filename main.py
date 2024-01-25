@@ -1,6 +1,7 @@
 import getopt
 import sys
 import time
+import base64
 from threading import Thread
 from datetime import timedelta
 
@@ -14,6 +15,7 @@ class KlipperLCD ():
         self.printer = PrinterData('XXXXXX', URL=("127.0.0.1"), klippy_sock='/home/pi/printer_data/comms/klippy.sock')
         self.running = False
         self.wait_probe = False
+        self.thumbnail_inprogress = False
 
         progress_bar = 1
         while self.printer.update_variable() == False:
@@ -69,7 +71,47 @@ class KlipperLCD ():
             self.lcd.data_update(data)
                 
             time.sleep(2)
-    
+
+    def show_thumbnail(self):
+        if self.printer.file_path and self.printer.file_name:
+            file = self.printer.file_path + "/" + self.printer.file_name
+
+            # Reading file
+            print(file)
+            f = open(file, "r")
+            if not f:
+                f.close()
+                print("File could not be opened: %s" % file)
+                return
+            buf = f.readlines()
+            if not f:
+                f.close()
+                print("File could not be read")
+                return
+
+            f.close()
+            thumbnail_found = False
+            b64 = ""
+
+            for line in buf:
+                if 'thumbnail begin' in line:
+                    thumbnail_found = True
+                elif 'thumbnail end' in line:
+                    thumbnail_found = False
+                    break
+                elif thumbnail_found:
+                    b64 += line.strip(' \t\n\r;')
+        
+            # Decode Base64
+            img = base64.b64decode(b64)        
+            
+            # Write thumbnail to LCD
+            self.lcd.write_thumbnail(img)
+        else:
+            print("File path or name to gcode-files missing")
+        
+        self.thumbnail_inprogress = False
+
     def lcd_callback(self, evt, data=None):
         if evt == self.lcd.evt.HOME:
             self.printer.home(data)
@@ -92,8 +134,14 @@ class KlipperLCD ():
             files = self.printer.GetFiles(True)
             return files
         elif evt == self.lcd.evt.PRINT_START:
-            pass
             self.printer.openAndPrintFile(data)
+            if self.thumbnail_inprogress == False:
+                self.thumbnail_inprogress = True
+                Thread(target=self.show_thumbnail).start()
+        elif evt == self.lcd.evt.THUMBNAIL:
+            if self.thumbnail_inprogress == False:
+                self.thumbnail_inprogress = True
+                Thread(target=self.show_thumbnail).start()
         elif evt == self.lcd.evt.PRINT_STATUS:
             pass
         elif evt == self.lcd.evt.PRINT_STOP:

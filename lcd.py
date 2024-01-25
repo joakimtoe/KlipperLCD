@@ -1,6 +1,10 @@
 import binascii
 from time import sleep
 from threading import Thread
+from array import array
+from io import BytesIO
+from PIL import Image
+import lib_col_pic
 
 import atexit
 import serial
@@ -89,6 +93,7 @@ class LCDEvents():
     ACCEL_TO_DECEL = 25
     VELOCITY       = 26
     SQUARE_CORNER_VELOCITY = 27
+    THUMBNAIL      = 28
 
 
 class LCD:
@@ -150,6 +155,7 @@ class LCD:
         self.rx_buf = bytearray()
         self.rx_data_cnt = 0
         self.rx_state = RX_STATE_IDLE
+        self.error_from_lcd = False
         # List of GCode files
         self.files = False
         self.selected_file = False
@@ -169,6 +175,8 @@ class LCD:
         self.accel_unit = 100
         # Probe /Level mode
         self.probe_mode = False
+        # Thumbnail
+        self.is_thumbnail_written = False
         # Make sure the serial port closes when you quit the program.
         atexit.register(self._atexit)
 
@@ -199,7 +207,7 @@ class LCD:
         self.write("information.size.txt=\"%s\"" % size)
         self.write("information.sversion.txt=\"%s\"" % fw)        
 
-    def write(self, data):
+    def write(self, data, eol=True):
         dat = bytearray()
         if type(data) == str:
             dat.extend(map(ord, data))
@@ -207,7 +215,80 @@ class LCD:
             dat.extend(data)
 
         self.ser.write(dat)
-        self.ser.write(bytearray([0xFF, 0xFF, 0xFF]))
+        if eol:
+            self.ser.write(bytearray([0xFF, 0xFF, 0xFF]))
+
+    def write_thumbnail(self, img):
+        # Clear screen
+        self.write("printpause.cp0.close()")
+        self.write("printpause.cp0.aph=0")
+        self.write("printpause.va0.txt=\"\"")
+        self.write("printpause.va1.txt=\"\"")        
+        
+        # Open as image
+        im = Image.open(BytesIO(img))
+        width, height = im.size
+        if width != 160 or height != 160:
+            im = im.resize((160, 160))
+
+        pixels = im.load()
+
+        color16 = array('H')
+        for i in range(height): #Height
+            for j in range(width): #Width
+                r, g, b, a = pixels[j, i]
+                r = r >> 3
+                g = g >> 2
+                b = b >> 3
+                rgb = (r << 11) | (g << 5) | b
+                color16.append(rgb)
+
+        output_data = bytearray(height * width * 10)
+        result_int = lib_col_pic.ColPic_EncodeStr(color16, width, height, output_data, width * height * 10, 1024)
+
+        each_max = 512
+        j = 0
+        k = 0
+        result = [bytearray()]
+        for i in range(len(output_data)):
+            if output_data[i] != 0:
+                if j % each_max == 0:
+                    result.append(bytearray())
+                    k += 1
+                result[k].append(output_data[i])
+                j += 1
+
+        # Send image to screen
+        self.error_from_lcd = True 
+        while self.error_from_lcd == True:
+            print("Write thumbnail to LCD")
+            self.error_from_lcd = False 
+
+            # Clear screen
+            self.write("printpause.cp0.close()")
+            self.write("printpause.cp0.aph=0")
+            self.write("printpause.va0.txt=\"\"")
+            self.write("printpause.va1.txt=\"\"")    
+
+            sleep(0.2)
+
+            for bytes in result:
+                self.write("printpause.cp0.aph=0")
+                self.write("printpause.va0.txt=\"\"")#
+
+                self.write("printpause.va0.txt=\"", eol = False)
+                self.write(bytes, eol = False)
+                self.write("\"")
+
+                self.write(("printpause.va1.txt+=printpause.va0.txt"))
+                sleep(0.02)
+
+            sleep(0.2)
+            self.write("printpause.cp0.aph=127")
+            self.write("printpause.cp0.write(printpause.va1.txt)")
+            self.is_thumbnail_written = True
+            print("Write thumbnail to LCD done!")
+
 
     def data_update(self, data):
         #print("data.state: %s self.printer.state: %s" % (data.state, self.printer.state))
@@ -242,19 +323,26 @@ class LCD:
                 self.write("speed_settings.sqr_crnr_vel.val=%d" % int(data.square_corner_velocity*10))
 
         if data.state != self.printer.state:
-                print(data.state)
+                print("Printer state: %s" % data.state)
                 if data.state == "printing":
                     print("Ongoing print detected")
                     self.write("page printpause")
                     self.write("restFlag1=0")
+                    self.write("restFlag2=1")
+                    if self.is_thumbnail_written == False:
+                        self.callback(self.evt.THUMBNAIL, None)
                 elif data.state == "paused" or data.state == "pausing":
                     print("Ongoing pause detected")
                     self.write("page printpause")
                     self.write("restFlag1=1")
+                    if self.is_thumbnail_written == False:
+                        self.callback(self.evt.THUMBNAIL, None)
                 elif (data.state == "cancelled"):
                     self.write("page main")
+                    self.is_thumbnail_written = False
                 elif (data.state == "complete"):
                     self.write("page printfinish")
+                    self.is_thumbnail_written = False
 
         if data != self.printer:
             self.printer = data
@@ -284,6 +372,7 @@ class LCD:
                             print("Unexpected header received: 0x%02x ()" % incomingByte[0])         
                     else:
                         self.rx_buf.clear()
+                        self.error_from_lcd = True
                         print("Unexpected data received: 0x%02x" % incomingByte[0])
                 #
                 elif self.rx_state == RX_STATE_READ_LEN:
@@ -484,21 +573,18 @@ class LCD:
                 self.write("adjusttemp.targettemp.val=%d" % self.printer.bed_target)
                 self.callback(self.evt.BED, self.printer.bed_target)
         elif data[0] == 0x0a: # Print
-            print(self.printer.feedrate)
             self.write("adjustspeed.targetspeed.val=%d" % self.printer.feedrate)
             self.speed_adjusting = 'PrintSpeed'
         elif data[0] == 0x0b: # Flow
             self.write("adjustspeed.targetspeed.val=%d" % self.printer.flowrate)
             self.speed_adjusting = 'Flow'
         elif data[0] == 0x0c: # Fan
-            print(self.printer.fan)
             self.write("adjustspeed.targetspeed.val=%d" % self.printer.fan)
             self.speed_adjusting = 'Fan'
         elif data[0] == 0x0d or data[0] == 0x0e: # Adjust speed
             unit = self.speed_unit 
             if data[0] == 0x0e:
                 unit = -self.speed_unit
-            print (self.speed_adjusting)
             if self.speed_adjusting == 'PrintSpeed':
                 feedrate = self.printer.feedrate + unit
                 self.write("adjustspeed.targetspeed.val=%d" % feedrate)
@@ -860,7 +946,7 @@ class LCD:
             self.write("printpause.printprocess.val=0")
             self.write("leveldata.z_offset.val=%d" % (int)(self.printer.z_offset * 100))
             self.write("page printpause")
-            self.write("restFlag2=0")
+            self.write("restFlag2=1")
             self.write("printpause.cp0.close()")
             self.write("printpause.cp0.aph=0")
             self.write("printpause.va0.txt=\"\"")
