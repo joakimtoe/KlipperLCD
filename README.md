@@ -145,6 +145,17 @@ Enable the service to automatically start at boot:
 
     sudo reboot
 
+## Console
+The console is enabled by default and can be accessed by clicking center top of the main screen or by clicking the thumbnail area while printing.
+
+The console enables sending commands and will display all gcode responses and information from Klipper normally found in the console tab in Mainsail or Fluidd.
+
+<p float="left">
+    <img src="img/console.PNG" height="400">
+    <img src="img/console_key.PNG" height="400">
+    <img src="img/console_num.PNG" height="400">
+</p>
+
 ## Thumbnails
 KlipperLCD also supports thumbnails!
 

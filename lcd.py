@@ -19,6 +19,7 @@ RegAddr_W = 0x80
 RegAddr_R = 0x81
 CMD_WRITEVAR = 0x82
 CMD_READVAR  = 0x83
+CMD_CONSOLE  = 0x42
 
 ExchangePageBase = 0x5A010000 # Unsigned long
 StartSoundSet    = 0x060480A0
@@ -94,6 +95,7 @@ class LCDEvents():
     VELOCITY       = 26
     SQUARE_CORNER_VELOCITY = 27
     THUMBNAIL      = 28
+    CONSOLE        = 29
 
 
 class LCD:
@@ -136,7 +138,8 @@ class LCD:
             0x2200: self._SetPreNozzleTemp,  
             0x2201: self._SetPreBedTemp,     
             0x2202: self._HardwareTest,      
-            0X2203: self._Err_Control
+            0X2203: self._Err_Control,
+            0x4201: self._Console
         }
 
         self.evt = LCDEvents()
@@ -199,8 +202,8 @@ class LCD:
         #self.write("page main")
     
     def boot_progress(self, progress):
-        self.lcd.write("boot.t0.txt=\"Waiting for Klipper...\"")
-        self.lcd.write("boot.j0.val=%d" % progress)
+        self.write("boot.t0.txt=\"Waiting for Klipper...\"")
+        self.write("boot.j0.val=%d" % progress)
 
     def about_machine(self, size, fw):
         print("Machine size: " + self.printer.MACHINE_SIZE)
@@ -208,13 +211,18 @@ class LCD:
         self.write("information.size.txt=\"%s\"" % size)
         self.write("information.sversion.txt=\"%s\"" % fw)        
 
-    def write(self, data, eol=True):
+    def write(self, data, eol=True, lf=False):
         dat = bytearray()
         if type(data) == str:
             dat.extend(map(ord, data))
         else:
             dat.extend(data)
 
+        if lf:
+            dat.extend(dat[-1:])
+            dat.extend(dat[-1:])
+            dat[len(dat)-2] = 10 #'\r'
+            dat[len(dat)-3] = 13 #'\n'
         self.ser.write(dat)
         if eol:
             self.ser.write(bytearray([0xFF, 0xFF, 0xFF]))
@@ -296,7 +304,22 @@ class LCD:
         if self.askprint == True:
             self.write("askprint.cp0.aph=127")
             self.write("askprint.cp0.write(printpause.va1.txt)")            
+   
+    def clear_console(self):
+        self.write("console.buf.txt=\"\"")
+        self.write("console.slt0.txt=\"\"")
 
+
+    def write_console(self, data):
+        if "\"" in data:
+            data = data.replace("\"", "'")
+
+        if '\n' in data:
+            data = data.replace("\n", "\r\n")
+        
+        self.write("console.buf.txt=\"%s\"" % data, lf = True)
+        self.write("console.buf.txt+=console.slt0.txt")
+        self.write("console.slt0.txt=console.buf.txt")
 
     def data_update(self, data):
         #print("data.state: %s self.printer.state: %s" % (data.state, self.printer.state))
@@ -385,13 +408,13 @@ class LCD:
                 #
                 elif self.rx_state == RX_STATE_READ_LEN:
                     # Check if len is as expected, seems to alway be 6 bytes?
-                    if incomingByte[0] == FHLEN:
-                        self.rx_buf.extend(incomingByte)
-                        self.rx_state = RX_STATE_READ_DAT
-                    else:
-                        self.rx_buf.clear()
-                        self.rx_state = RX_STATE_IDLE
-                        print("Unexpected len param received: 0x%02x" % incomingByte[0])
+                    #if incomingByte[0] == FHLEN:
+                    self.rx_buf.extend(incomingByte) # Read length
+                    self.rx_state = RX_STATE_READ_DAT
+                    #else:
+                    #    self.rx_buf.clear()
+                    #    self.rx_state = RX_STATE_IDLE
+                    #    print("Unexpected len param received: 0x%02x" % incomingByte[0])
                 #
                 elif self.rx_state == RX_STATE_READ_DAT:
                     self.rx_buf.extend(incomingByte)
@@ -421,6 +444,11 @@ class LCD:
                 data[idx] = dat[3 + i]
                 data[idx] = (data[idx] << 8) | dat[4 + i]
             self._handle_readvar(addr, data)
+        elif cmd == CMD_CONSOLE: #0x42
+            addr = dat[0]
+            addr = (addr << 8) | dat[1]
+            data = dat[3:] # Remove addr and len
+            self._handle_readvar(addr, data)
         else:
             print("Command not reqognised: %d" % cmd)
             print(binascii.hexlify(dat))
@@ -435,7 +463,18 @@ class LCD:
             self.addr_func_map[addr](data)
         else:
             print("_handle_readvar: addr %x not recognised" % addr)
-    
+
+    def _Console(self, data):
+        if data[0] == 0x01: # Back
+            state = self.printer.state
+            if state == "printing" or state == "paused" or state == "pausing":
+                self.write("page printpause")
+            else:
+                self.write("page main")
+        else:
+            print(data.decode())
+            self.callback(self.evt.CONSOLE, data.decode())
+
     def _MainPage(self, data):
         if data[0] == 1: # Print
             # Request files

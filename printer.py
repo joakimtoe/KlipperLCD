@@ -230,7 +230,8 @@ class PrinterData:
 	SHORT_BUILD_VERSION = "1.00"
 	CORP_WEBSITE_E = "https://www.klipper3d.org/"
 
-	def __init__(self, API_Key, URL='127.0.0.1', klippy_sock='/home/pi/printer_data/comms/klippy.sock'):
+	def __init__(self, API_Key, URL='127.0.0.1', klippy_sock='/home/pi/printer_data/comms/klippy.sock', callback=None):
+		self.response_callback = callback
 		self.klippy_sock      = klippy_sock
 		self.BABY_Z_VAR       = 0
 		self.print_speed      = 100
@@ -282,10 +283,12 @@ class PrinterData:
 		}
 		self.klippy_z_offset = '{"id": 4002, "method": "objects/query", "params": {"objects": {"configfile": ["config"]}}}'
 		self.klippy_home = '{"id": 4003, "method": "objects/query", "params": {"objects": {"toolhead": ["homed_axes"]}}}'
+		self.gcode = '{"id": 4004, "method": "gcode/subscribe_output", "params": {"response_template":{}}}'
 
 		self.ks.queue_line(json.dumps(subscribe))
 		self.ks.queue_line(self.klippy_z_offset)
 		self.ks.queue_line(self.klippy_home)
+		self.ks.queue_line(self.gcode)
 
 	def klippy_callback(self, line):
 		klippyData = json.loads(line)
@@ -298,6 +301,13 @@ class PrinterData:
 		if 'params' in klippyData:
 			if 'status' in klippyData['params']:
 				status = klippyData['params']['status']
+			if 'response' in klippyData['params']:
+				if self.response_callback:
+					resp = klippyData['params']['response']
+					if 'B:' in resp and 'T0:' in resp:
+						pass ## Filter out temperature responses
+					else:
+						self.response_callback(resp)
 
 		if status:
 			if 'toolhead' in status:
@@ -407,6 +417,7 @@ class PrinterData:
 		if self.getREST('/api/printer') is None:
 			return
 		self.update_variable()
+
 		#alternative approach
 		#full_version = self.getREST('/printer/info')['result']['software_version']
 		#self.SHORT_BUILD_VERSION = '-'.join(full_version.split('-',2)[:2])
@@ -427,6 +438,15 @@ class PrinterData:
 		self.max_accel              = toolhead['max_accel']
 		self.max_accel_to_decel     = toolhead['max_accel_to_decel']
 		self.square_corner_velocity = toolhead['square_corner_velocity']
+
+	def get_gcode_store(self, count=100):
+		gcode_store = None
+		try:
+			gcode_store = self.getREST('/server/gcode_store?count=%d' % count)['result']['gcode_store']
+		except:
+			print("GCode store read failed!")
+		
+		return gcode_store
 
 	def GetFiles(self, refresh=False):
 		if not self.files or refresh:

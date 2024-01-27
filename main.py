@@ -12,7 +12,7 @@ class KlipperLCD ():
     def __init__(self):
         self.lcd = LCD("/dev/ttyAMA0", callback=self.lcd_callback)
         self.lcd.start()
-        self.printer = PrinterData('XXXXXX', URL=("127.0.0.1"), klippy_sock='/home/pi/printer_data/comms/klippy.sock')
+        self.printer = PrinterData('XXXXXX', URL=("127.0.0.1"), klippy_sock='/home/pi/printer_data/comms/klippy.sock', callback=self.printer_callback)
         self.running = False
         self.wait_probe = False
         self.thumbnail_inprogress = False
@@ -24,6 +24,21 @@ class KlipperLCD ():
             time.sleep(1)
 
         self.printer.init_Webservices()
+        gcode_store = self.printer.get_gcode_store()
+        self.lcd.clear_console()
+        for data in gcode_store:
+            if data['type'] == 'command':
+                self.lcd.write_console("> " + data['message'])
+            elif data['type'] == 'response':
+                if 'B:' in data['message'] and 'T0:' in data['message']:
+                    pass ## Filter out temperature responses
+                else:
+                    dat = data['message'].replace("//", "<")
+                    dat = dat.replace("??????", "?")
+                    self.lcd.write_console(dat)
+            else:
+                print("Gcode store type unknown")
+
         print(self.printer.MACHINE_SIZE)
         print(self.printer.SHORT_BUILD_VERSION)
         self.lcd.write("information.size.txt=\"%s\"" % self.printer.MACHINE_SIZE)
@@ -71,6 +86,11 @@ class KlipperLCD ():
             self.lcd.data_update(data)
                 
             time.sleep(2)
+
+    def printer_callback(self, data):
+        dat = data.replace("//", "<")
+        dat = dat.replace("??????", "?")
+        self.lcd.write_console(dat)
 
     def show_thumbnail(self):
         if self.printer.file_path and (self.printer.file_name or self.lcd.files[self.lcd.selected_file]):
@@ -204,6 +224,8 @@ class KlipperLCD ():
             #print(data)
             print("SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=%.1f" % data)
             self.printer.sendGCode("SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=%.1f" % data)
+        elif evt == self.lcd.evt.CONSOLE:
+            self.printer.sendGCode(data)
         else:
             print("lcd_callback event not recognised %d" % evt)
 
