@@ -307,7 +307,7 @@ class PrinterData:
 					if 'B:' in resp and 'T0:' in resp:
 						pass ## Filter out temperature responses
 					else:
-						self.response_callback(resp)
+						self.response_callback(resp, 'response')
 
 		if status:
 			if 'toolhead' in status:
@@ -447,6 +447,23 @@ class PrinterData:
 			print("GCode store read failed!")
 		
 		return gcode_store
+	
+	def get_macros(self, filter_internal = True):
+		macros = []
+		try:
+			objects = self.getREST('/printer/objects/list')['result']['objects']
+		except:
+			print("Could not read macro objects!")
+		
+		for obj in objects:
+			if 'gcode_macro' in obj:
+				macro = obj.split(' ')[1]
+				if filter_internal:
+					if macro[0] != '_':
+						macros.append(macro)
+				else:
+					macros.append(macro)
+		return macros	
 
 	def GetFiles(self, refresh=False):
 		if not self.files or refresh:
@@ -499,8 +516,8 @@ class PrinterData:
 			if self.thermalManager['temp_hotend'][0]['target'] != int(self.extruder['target']):
 				self.thermalManager['temp_hotend'][0]['target'] = int(self.extruder['target'])
 				Update = True
-			if self.thermalManager['fan_speed'][0] != int(self.fan['speed'] * 100):
-				self.thermalManager['fan_speed'][0] = int(self.fan['speed'] * 100)
+			if self.thermalManager['fan_speed'][0] != int((self.fan['speed'] * 100) + 0.5):
+				self.thermalManager['fan_speed'][0] = int((self.fan['speed'] * 100) + 0.5)
 				Update = True
 			if self.BABY_Z_VAR != self.z_offset:
 				self.BABY_Z_VAR = self.z_offset
@@ -583,7 +600,7 @@ class PrinterData:
 
 	def set_print_speed(self, fr):
 		self.print_speed = fr
-		self.sendGCode('M220 S%s' % fr)
+		self.sendGCode('M220 S%d' % fr)
 
 	def set_flow(self, fl):
 		self.flow_percentage = fl
@@ -620,6 +637,8 @@ class PrinterData:
 
 	def sendGCode(self, gcode):
 		self.postREST('/printer/gcode/script', json={'script': gcode})
+		if self.response_callback:
+			self.response_callback(gcode, 'command')
 
 	def disable_all_heaters(self):
 		self.setExtTemp(0)

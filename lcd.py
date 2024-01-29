@@ -310,6 +310,23 @@ class LCD:
         self.write("console.slt0.txt=\"\"")
 
 
+    def format_console_data(self, msg, data_type):
+        data = None
+        if data_type == 'command':
+            data = "> " + msg
+        elif data_type == 'response':
+            if 'B:' in msg and 'T0:' in msg:
+                pass ## Filter out temperature responses
+            else:
+                data = msg.replace("// ", "")
+                data = data.replace("??????", "?")
+                data = data.replace("echo: ", "")
+                data = "< " + data
+        else:
+            print("format_console_data: type unknown")
+
+        return data
+    
     def write_console(self, data):
         if "\"" in data:
             data = data.replace("\"", "'")
@@ -320,6 +337,22 @@ class LCD:
         self.write("console.buf.txt=\"%s\"" % data, lf = True)
         self.write("console.buf.txt+=console.slt0.txt")
         self.write("console.slt0.txt=console.buf.txt")
+
+    def write_gcode_store(self, gcode_store):
+        self.clear_console()
+        for data in gcode_store:
+            msg = self.format_console_data(data['message'], data['type'])
+            if msg: 
+                self.write_console(msg)
+
+    def write_macros(self, macros):
+        self.write("macro.cb0.path=\"\"")
+        for macro in macros:
+            line_feed = True
+            if macro == macros[-1]: #Last element, dont print with line feed
+                line_feed = False
+            self.write("macro.cb0.path+=\"%s\"" % macro, lf = line_feed)
+
 
     def data_update(self, data):
         #print("data.state: %s self.printer.state: %s" % (data.state, self.printer.state))
@@ -336,12 +369,12 @@ class LCD:
             self.write("leveldata.z_offset.val=%d" % (int)(data.z_pos * 100))
             #self.write("adjustzoffset.z_offset.val=%d" % (int)(data.z_pos * 100))
 
-        if self.speed_adjusting == 'PrintSpeed' and data.feedrate != self.printer.feedrate:
-            self.write("adjustspeed.targetspeed.val=%d" % data.feedrate)
-        elif self.speed_adjusting == 'Flow' and data.flowrate != self.printer.flowrate:
-            self.write("adjustspeed.targetspeed.val=%d" % data.flowrate)
-        elif self.speed_adjusting == 'Fan' and data.fan != self.printer.fan:
-            self.write("adjustspeed.targetspeed.val=%d" % data.fan)
+        #if self.speed_adjusting == 'PrintSpeed' and data.feedrate != self.printer.feedrate:
+        #    self.write("adjustspeed.targetspeed.val=%d" % data.feedrate)
+        #elif self.speed_adjusting == 'Flow' and data.flowrate != self.printer.flowrate:
+        #    self.write("adjustspeed.targetspeed.val=%d" % data.flowrate)
+        #elif self.speed_adjusting == 'Fan' and data.fan != self.printer.fan:
+        #    self.write("adjustspeed.targetspeed.val=%d" % data.fan)
 
         if self.adjusting_max:
             if data.max_accel != self.printer.max_accel:
@@ -513,8 +546,10 @@ class LCD:
             self.write("page printpause")
         elif data[0] == 0x03:
             if self.printer.fan > 0:
+                self.printer.fan = 0
                 self.callback(self.evt.FAN, 0)
             else:
+                self.printer.fan = 100
                 self.callback(self.evt.FAN, 100)
         elif data[0] == 0x05:
             print("Filament tab")
@@ -534,11 +569,17 @@ class LCD:
             self.write("adjustzoffset.z_offset.val=%d" % (int) (self.printer.z_offset * 100))
             self.write("page adjustzoffset")
         elif data[0] == 0x08: #
+            self.printer.feedrate = 100
             self.write("adjustspeed.targetspeed.val=%d" % 100)
+            self.callback(self.evt.PRINT_SPEED, self.printer.feedrate)
         elif data[0] == 0x09:
+            self.printer.flowrate = 100
             self.write("adjustspeed.targetspeed.val=%d" % 100)
+            self.callback(self.evt.FLOW, self.printer.flowrate)
         elif data[0] == 0x0a:
+            self.printer.fan = 100
             self.write("adjustspeed.targetspeed.val=%d" % 100)
+            self.callback(self.evt.FAN, self.printer.fan)
         else:
             print("_Adjustment: %d not supported" % data[0])
     
@@ -634,20 +675,17 @@ class LCD:
             if data[0] == 0x0e:
                 unit = -self.speed_unit
             if self.speed_adjusting == 'PrintSpeed':
-                feedrate = self.printer.feedrate + unit
-                self.write("adjustspeed.targetspeed.val=%d" % feedrate)
-                self.callback(self.evt.PRINT_SPEED, feedrate)
-                self.printer.feedrate = feedrate
+                self.printer.feedrate += unit
+                self.write("adjustspeed.targetspeed.val=%d" % self.printer.feedrate)
+                self.callback(self.evt.PRINT_SPEED, self.printer.feedrate)
             elif self.speed_adjusting == 'Flow':
-                flow = self.printer.flowrate + unit
-                self.write("adjustspeed.targetspeed.val=%d" % flow)
-                self.callback(self.evt.FLOW, flow)
-                self.printer.flowrate = flow
+                self.printer.flowrate += unit
+                self.write("adjustspeed.targetspeed.val=%d" % self.printer.flowrate)
+                self.callback(self.evt.FLOW, self.printer.flowrate)
             elif self.speed_adjusting == 'Fan':
-                fan = self.printer.fan + unit
-                self.write("adjustspeed.targetspeed.val=%d" % fan)
-                self.callback(self.evt.FAN, fan)
-                self.printer.fan = fan
+                self.printer.fan += unit
+                self.write("adjustspeed.targetspeed.val=%d" % self.printer.fan)
+                self.callback(self.evt.FAN, self.printer.fan)
             else:
                 print("self.speed_adjusting not recognised %s" % self.speed_adjusting)
         elif data[0] == 0x42: # Accel/Speed advanced

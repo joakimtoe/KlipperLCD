@@ -25,19 +25,10 @@ class KlipperLCD ():
 
         self.printer.init_Webservices()
         gcode_store = self.printer.get_gcode_store()
-        self.lcd.clear_console()
-        for data in gcode_store:
-            if data['type'] == 'command':
-                self.lcd.write_console("> " + data['message'])
-            elif data['type'] == 'response':
-                if 'B:' in data['message'] and 'T0:' in data['message']:
-                    pass ## Filter out temperature responses
-                else:
-                    dat = data['message'].replace("//", "<")
-                    dat = dat.replace("??????", "?")
-                    self.lcd.write_console(dat)
-            else:
-                print("Gcode store type unknown")
+        self.lcd.write_gcode_store(gcode_store)
+
+        macros = self.printer.get_macros()
+        self.lcd.write_macros(macros)
 
         print(self.printer.MACHINE_SIZE)
         print(self.printer.SHORT_BUILD_VERSION)
@@ -87,10 +78,10 @@ class KlipperLCD ():
                 
             time.sleep(2)
 
-    def printer_callback(self, data):
-        dat = data.replace("//", "<")
-        dat = dat.replace("??????", "?")
-        self.lcd.write_console(dat)
+    def printer_callback(self, data, data_type):
+        msg = self.lcd.format_console_data(data, data_type)
+        if msg:
+            self.lcd.write_console(msg)
 
     def show_thumbnail(self):
         if self.printer.file_path and (self.printer.file_name or self.lcd.files[self.lcd.selected_file]):
