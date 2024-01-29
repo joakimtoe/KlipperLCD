@@ -1,10 +1,12 @@
 import binascii
-from time import sleep
+from time import sleep, time
 from threading import Thread
 from array import array
 from io import BytesIO
 from PIL import Image
 import lib_col_pic
+from ctypes import *
+import os
 
 import atexit
 import serial
@@ -234,6 +236,11 @@ class LCD:
         self.write("printpause.va1.txt=\"\"") 
 
     def write_thumbnail(self, img):
+        start_time = time()
+        tot_start = start_time
+
+        pDll = CDLL(os.path.join(os.path.dirname(__file__), "LCD/libColPic.so"))
+
         # Clear screen
         self.clear_thumbnail()
 
@@ -244,7 +251,13 @@ class LCD:
             im = im.resize((160, 160))
             width, height = im.size
 
+        print("Open and rezise %s s" % (time() - start_time))
+        start_time = time()
+
         pixels = im.load()
+        
+        print("Load %s s" % (time() - start_time))
+        start_time = time()
 
         color16 = array('H')
         for i in range(height): #Height
@@ -258,8 +271,18 @@ class LCD:
                     rgb = 0x4AF0
                 color16.append(rgb)
 
+        print("Convert to 16bit %s s" % (time() - start_time))
+        start_time = time()
+
         output_data = bytearray(height * width * 10)
-        result_int = lib_col_pic.ColPic_EncodeStr(color16, width, height, output_data, width * height * 10, 1024)
+        #result_int = lib_col_pic.ColPic_EncodeStr(color16, width, height, output_data, width * height * 10, 1024)
+
+        fromcolor16 = color16.tobytes()
+        result_int = pDll.ColPic_EncodeStr(fromcolor16, height, width, output_data, width * height, 1024)
+
+
+        print("ColPic_Encode convert %s s" % (time() - start_time))
+        start_time = time()
 
         each_max = 512
         j = 0
@@ -272,6 +295,9 @@ class LCD:
                     k += 1
                 result[k].append(output_data[i])
                 j += 1
+
+        print("Split to list %s s" % (time() - start_time))
+        start_time = time()
 
         # Send image to screen
         self.error_from_lcd = True 
@@ -303,7 +329,11 @@ class LCD:
         
         if self.askprint == True:
             self.write("askprint.cp0.aph=127")
-            self.write("askprint.cp0.write(printpause.va1.txt)")            
+            self.write("askprint.cp0.write(printpause.va1.txt)")
+
+        t = time()
+        print("Write to LCD %s s" % (t - start_time))
+        print("Total time %s s" % (t - tot_start))
    
     def clear_console(self):
         self.write("console.buf.txt=\"\"")
