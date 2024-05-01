@@ -436,7 +436,7 @@ class PrinterData:
 		self.Y_MAX_POS = int(volume[1])
 		self.max_velocity           = toolhead['max_velocity']
 		self.max_accel              = toolhead['max_accel']
-		self.max_accel_to_decel     = toolhead['max_accel_to_decel']
+		self.max_accel_to_decel     = toolhead.get('max_accel_to_decel', -1)
 		self.square_corner_velocity = toolhead['square_corner_velocity']
 
 	def get_gcode_store(self, count=100):
