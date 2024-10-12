@@ -609,9 +609,9 @@ class PrinterData:
 	def set_led(self, led):
 		self.led_percentage = led
 		if(led > 0):
-			self.sendGCode('SET_LED LED=top_LEDs WHITE=0.5 SYNC=0 TRANSMIT=1')
+			self.sendGCode('SET_LED LED=LED_Light WHITE=0.5 SYNC=0 TRANSMIT=1')
 		else:
-			self.sendGCode('SET_LED LED=top_LEDs WHITE=0 SYNC=0 TRANSMIT=1')
+			self.sendGCode('SET_LED LED=LED_Light WHITE=0 SYNC=0 TRANSMIT=1')
 
 	def set_fan(self, fan):
 		self.fan_percentage = fan
