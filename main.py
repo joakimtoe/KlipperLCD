@@ -13,7 +13,7 @@ class KlipperLCD ():
     def __init__(self):
         self.lcd = LCD("/dev/ttyAMA0", callback=self.lcd_callback)
         self.lcd.start()
-        self.printer = PrinterData('XXXXXX', URL=("127.0.0.1"), klippy_sock='/home/user/printer_data/comms/klippy.sock', callback=self.printer_callback)
+        self.printer = PrinterData('XXXXXX', URL=("127.0.0.1"), klippy_sock=None, callback=self.printer_callback)
         self.running = False
         self.wait_probe = False
         self.thumbnail_inprogress = False
@@ -192,7 +192,13 @@ class KlipperLCD ():
             self.printer.sendGCode('ACCEPT')
             self.printer.sendGCode('G1 F1000 Z15.0')
             print("Calibrate!")
+            self.printer.sendGCode('M104 S120')
+            self.printer.sendGCode('M140 S65')
+            self.printer.sendGCode('G4 S10')
+            self.printer.sendGCode('M190 S65')
+            self.printer.sendGCode('M109 S120')
             self.printer.sendGCode('BED_MESH_CALIBRATE PROFILE=default METHOD=automatic')
+            self.printer.sendGCode('G28 Z')
             self.printer.sendGCode('G1 F1000 Z0')
         elif evt == self.lcd.evt.PROBE_BACK:
             print("BACK!")

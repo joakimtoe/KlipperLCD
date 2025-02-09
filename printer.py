@@ -9,6 +9,7 @@ from requests.exceptions import ConnectionError
 import atexit
 import time
 import asyncio
+import os
 
 class xyze_t:
 	x = 0.0
@@ -230,7 +231,7 @@ class PrinterData:
 	SHORT_BUILD_VERSION = "1.00"
 	CORP_WEBSITE_E = "https://www.klipper3d.org/"
 
-	def __init__(self, API_Key, URL='127.0.0.1', klippy_sock='/home/user/printer_data/comms/klippy.sock', callback=None):
+	def __init__(self, API_Key, URL='127.0.0.1', klippy_sock=None, callback=None):
 		self.response_callback = callback
 		self.klippy_sock      = klippy_sock
 		self.BABY_Z_VAR       = 0
@@ -260,6 +261,21 @@ class PrinterData:
 		
 		self.op = MoonrakerSocket(URL, 80, API_Key)
 		print(self.op.base_address)
+
+		if klippy_sock == None:
+			# try to find klippy sock in Moonraker config or use generic value
+			info = self.getREST("/server/config")
+			klippy_sock_found = False
+			if 'result' in info:
+				if 'config' in info['result']:
+					if 'server' in info['result']['config']:
+						if 'klippy_uds_address' in info['result']['config']['server']:
+							self.klippy_sock = os.path.expanduser(info['result']['config']['server']['klippy_uds_address'])
+							klippy_sock_found = True
+
+			if not klippy_sock_found:
+				self.klippy_sock = os.path.expanduser("~/printer_data/comms/klippy.sock")
+
 
 		self.klippy_start()
 
