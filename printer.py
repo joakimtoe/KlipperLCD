@@ -6,6 +6,7 @@ import socket
 import json
 import requests
 from requests.exceptions import ConnectionError
+from json import JSONDecodeError
 import atexit
 import time
 import asyncio
@@ -264,14 +265,16 @@ class PrinterData:
 
 		if klippy_sock == None:
 			# try to find klippy sock in Moonraker config or use generic value
-			info = self.getREST("/server/config")
-			klippy_sock_found = False
-			if 'result' in info:
-				if 'config' in info['result']:
-					if 'server' in info['result']['config']:
-						if 'klippy_uds_address' in info['result']['config']['server']:
-							self.klippy_sock = os.path.expanduser(info['result']['config']['server']['klippy_uds_address'])
-							klippy_sock_found = True
+			info = None
+			while info is None:
+				info = self.getREST("/server/config")
+				klippy_sock_found = False
+				if 'result' in info:
+					if 'config' in info['result']:
+						if 'server' in info['result']['config']:
+							if 'klippy_uds_address' in info['result']['config']['server']:
+								self.klippy_sock = os.path.expanduser(info['result']['config']['server']['klippy_uds_address'])
+								klippy_sock_found = True
 
 			if not klippy_sock_found:
 				self.klippy_sock = os.path.expanduser("~/printer_data/comms/klippy.sock")
