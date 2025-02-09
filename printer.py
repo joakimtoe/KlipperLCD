@@ -254,6 +254,7 @@ class PrinterData:
 		self.file_path              = None
 		self.file_name              = None
 		self.status                 = None
+		self.print_time             = None
 		self.max_velocity           = None
 		self.max_accel              = None
 		self.minimum_cruise_ratio   = None
@@ -566,6 +567,7 @@ class PrinterData:
 		if self.job_Info:
 			self.file_name = self.job_Info['print_stats']['filename']
 			self.status = self.job_Info['print_stats']['state']
+			self.print_time = self.job_Info['print_stats']['total_duration']
 			self.HMI_flag.print_finish = self.getPercent() == 100.0
 		return Update
 

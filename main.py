@@ -61,6 +61,7 @@ class KlipperLCD ():
         data.percent       = self.printer.getPercent()
         data.duration      = self.printer.duration()
         data.remaining     = self.printer.remain()
+        data.print_time    = self.printer.print_time
         data.feedrate      = self.printer.print_speed
         data.flowrate      = self.printer.flow_percentage
         data.fan           = self.printer.thermalManager['fan_speed'][0]

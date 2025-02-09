@@ -52,6 +52,7 @@ class _printerData():
     percent         = None
     duration        = None
     remaining       = None
+    print_time      = None
     feedrate        = None
     flowrate        = 0
     fan             = None
@@ -405,6 +406,7 @@ class LCD:
                     self.write("page main")
                     self.is_thumbnail_written = False
                 elif (data.state == "complete"):
+                    self.write("printpause.printtime.txt=\"%d h %d min\"" % (data.print_time/3600,(data.print_time % 3600)/60))
                     self.write("page printfinish")
                     self.is_thumbnail_written = False
                 elif (data.state == "standby"):
