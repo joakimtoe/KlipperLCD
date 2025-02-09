@@ -13,7 +13,7 @@ class KlipperLCD ():
     def __init__(self):
         self.lcd = LCD("/dev/ttyAMA0", callback=self.lcd_callback)
         self.lcd.start()
-        self.printer = PrinterData('XXXXXX', URL=("127.0.0.1"), klippy_sock=None, callback=self.printer_callback)
+        self.printer = PrinterData('XXXXXX', URL=("127.0.0.1"), callback=self.printer_callback)
         self.running = False
         self.wait_probe = False
         self.thumbnail_inprogress = False
