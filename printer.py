@@ -230,7 +230,7 @@ class PrinterData:
 	SHORT_BUILD_VERSION = "1.00"
 	CORP_WEBSITE_E = "https://www.klipper3d.org/"
 
-	def __init__(self, API_Key, URL='127.0.0.1', klippy_sock='/home/pi/printer_data/comms/klippy.sock', callback=None):
+	def __init__(self, API_Key, URL='127.0.0.1', klippy_sock='/home/user/printer_data/comms/klippy.sock', callback=None):
 		self.response_callback = callback
 		self.klippy_sock      = klippy_sock
 		self.BABY_Z_VAR       = 0
@@ -255,7 +255,7 @@ class PrinterData:
 		self.status                 = None
 		self.max_velocity           = None
 		self.max_accel              = None
-		self.max_accel_to_decel     = None
+		self.minimum_cruise_ratio   = None
 		self.square_corner_velocity = None
 		
 		self.op = MoonrakerSocket(URL, 80, API_Key)
@@ -345,9 +345,9 @@ class PrinterData:
 				if 'max_accel' in status['toolhead']:
 					if self.max_accel != status['toolhead']['max_accel']:
 						self.max_accel = status['toolhead']['max_accel']
-				if 'max_accel_to_decel' in status['toolhead']:
-					if self.max_accel_to_decel != status['toolhead']['max_accel_to_decel']:
-						self.max_accel_to_decel = status['toolhead']['max_accel_to_decel']
+				if 'minimum_cruise_ratio' in status['toolhead']:
+					if self.minimum_cruise_ratio != status['toolhead']['minimum_cruise_ratio']:
+						self.minimum_cruise_ratio = status['toolhead']['minimum_cruise_ratio']
 				if 'square_corner_velocity' in status['toolhead']:
 					if self.square_corner_velocity != status['toolhead']['square_corner_velocity']:
 						self.square_corner_velocity = status['toolhead']['square_corner_velocity']
@@ -436,7 +436,7 @@ class PrinterData:
 		self.Y_MAX_POS = int(volume[1])
 		self.max_velocity           = toolhead['max_velocity']
 		self.max_accel              = toolhead['max_accel']
-		self.max_accel_to_decel     = toolhead['max_accel_to_decel']
+		self.minimum_cruise_ratio   = toolhead['minimum_cruise_ratio']
 		self.square_corner_velocity = toolhead['square_corner_velocity']
 
 	def get_gcode_store(self, count=100):
@@ -530,8 +530,8 @@ class PrinterData:
 			if self.max_accel != self.toolhead['max_accel']:
 				self.max_accel = self.toolhead['max_accel']
 				Update = True
-			if self.max_accel_to_decel != self.toolhead['max_accel_to_decel']:
-				self.max_accel_to_decel = self.toolhead['max_accel_to_decel']
+			if self.minimum_cruise_ratio != self.toolhead['minimum_cruise_ratio']:
+				self.minimum_cruise_ratio = self.toolhead['minimum_cruise_ratio']
 				Update = True
 			if self.square_corner_velocity != self.toolhead['square_corner_velocity']:
 				self.square_corner_velocity = self.toolhead['square_corner_velocity']

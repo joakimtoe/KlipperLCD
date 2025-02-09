@@ -63,7 +63,7 @@ class _printerData():
     
     max_velocity           = None
     max_accel              = None
-    max_accel_to_decel     = None
+    minimum_cruise_ratio   = None
     square_corner_velocity = None
 
 class LCDEvents():
@@ -91,7 +91,7 @@ class LCDEvents():
     PROBE_COMPLETE = 22
     PROBE_BACK     = 23
     ACCEL          = 24
-    ACCEL_TO_DECEL = 25
+    MIN_CRUISE_RATIO = 25
     VELOCITY       = 26
     SQUARE_CORNER_VELOCITY = 27
     THUMBNAIL      = 28
@@ -379,8 +379,8 @@ class LCD:
         if self.adjusting_max:
             if data.max_accel != self.printer.max_accel:
                 self.write("speed_settings.accel.val=%d" % data.max_accel)
-            if data.max_accel_to_decel != self.printer.max_accel_to_decel:
-                self.write("speed_settings.accel_to_decel.val=%d" % data.max_accel_to_decel)
+            if data.minimum_cruise_ratio != self.printer.minimum_cruise_ratio:
+                self.write("speed_settings.accel_to_decel.val=%d" % int(data.minimum_cruise_ratio*100))
             if data.max_velocity != self.printer.max_velocity:
                 self.write("speed_settings.velocity.val=%d" % data.max_velocity)
             if data.square_corner_velocity != self.printer.square_corner_velocity:
@@ -406,6 +406,8 @@ class LCD:
                     self.is_thumbnail_written = False
                 elif (data.state == "complete"):
                     self.write("page printfinish")
+                    self.is_thumbnail_written = False
+                elif (data.state == "standby"):
                     self.is_thumbnail_written = False
 
         if data != self.printer:
@@ -694,7 +696,7 @@ class LCD:
             self.adjusting_max = True
             self.write("speed_settings.t4.font=0")
             self.write("speed_settings.accel.val=%d" % self.printer.max_accel)
-            self.write("speed_settings.accel_to_decel.val=%d" % self.printer.max_accel_to_decel)
+            self.write("speed_settings.accel_to_decel.val=%d" % int(self.printer.minimum_cruise_ratio*100))
             self.write("speed_settings.velocity.val=%d" % self.printer.max_velocity)
             self.write("speed_settings.sqr_crnr_vel.val=%d" % int(self.printer.square_corner_velocity*10))
         elif data[0] == 0x43: # Max acceleration set
@@ -708,18 +710,17 @@ class LCD:
             self.write("speed_settings.accel.val=%d" % new_accel)
             
             self.callback(self.evt.ACCEL, new_accel)
-            self.printer.max_accel = new_accel
+            # self.printer.max_accel = new_accel
 
         elif data[0] == 0x12 or data[0] == 0x16: #Accel to Decel decrease / increase
-            unit = self.accel_unit
+            unit = self.speed_unit/100
             if data[0] == 0x12:
-                unit = -self.accel_unit
-            new_accel = self.printer.max_accel_to_decel + unit
-            self.write("speed_settings.accel_to_decel.val=%d" % new_accel)
+                unit = -self.speed_unit/100
+            new_accel = self.printer.minimum_cruise_ratio + unit
+            self.write("speed_settings.accel_to_decel.val=%d" % int(new_accel*100))
             
-            self.callback(self.evt.ACCEL_TO_DECEL, new_accel)
-            self.printer.max_accel_to_decel = new_accel
-
+            self.callback(self.evt.MIN_CRUISE_RATIO, new_accel)
+            # self.printer.minimum_cruise_ratio = new_accel
         elif data[0] == 0x13 or data[0] == 0x17: #Velocity decrease / increase
             unit = self.speed_unit
             if data[0] == 0x13:
@@ -728,7 +729,7 @@ class LCD:
             self.write("speed_settings.velocity.val=%d" % new_velocity)
             
             self.callback(self.evt.VELOCITY, new_velocity)
-            self.printer.max_velocity = new_velocity
+            # self.printer.max_velocity = new_velocity
 
         elif data[0] == 0x14 or data[0] == 0x18: #Square Corner Velozity decrease / increase
             unit = self.speed_unit/10
@@ -739,7 +740,7 @@ class LCD:
             self.write("speed_settings.sqr_crnr_vel.val=%d" % int(new_velocity*10))
 
             self.callback(self.evt.SQUARE_CORNER_VELOCITY, new_velocity)
-            self.printer.square_corner_velocity = new_velocity
+            # self.printer.square_corner_velocity = new_velocity
 
         else:
             print("_TempScreen: Not recognised %d" % data[0])
