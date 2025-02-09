@@ -69,6 +69,7 @@ class KlipperLCD ():
         data.y_pos         = self.printer.current_position.y
         data.z_pos         = self.printer.current_position.z
         data.z_offset      = self.printer.BABY_Z_VAR
+        data.z_requested   = self.printer.z_requested
         data.file_name     = self.printer.file_name
         data.max_velocity           = self.printer.max_velocity          
         data.max_accel              = self.printer.max_accel
@@ -187,12 +188,17 @@ class KlipperLCD ():
                 self.wait_probe = True
             else:
                 self.printer.probe_adjust(data)
+                self.update()
         elif evt == self.lcd.evt.PROBE_COMPLETE:
             self.wait_probe = False
             print("Save settings!")
             self.printer.sendGCode('ACCEPT')
             self.printer.sendGCode('G1 F1000 Z15.0')
             print("Calibrate!")
+            # data.hotend        = self.printer.thermalManager['temp_hotend'][0]['celsius']
+            # data.bed           = self.printer.thermalManager['temp_bed']['celsius']
+            self.lcd.write("pretemp.nozzle.txt=\"%d\"" % self.printer.thermalManager['temp_hotend'][0]['target'])
+            self.lcd.write("pretemp.bed.txt=\"%d\"" % self.printer.thermalManager['temp_bed']['target'])
             self.printer.sendGCode('M104 S120')
             self.printer.sendGCode('M140 S65')
             self.printer.sendGCode('G4 S10')
@@ -200,7 +206,7 @@ class KlipperLCD ():
             self.printer.sendGCode('M109 S120')
             self.printer.sendGCode('BED_MESH_CALIBRATE PROFILE=default METHOD=automatic')
             self.printer.sendGCode('G28 Z')
-            self.printer.sendGCode('G1 F1000 Z0')
+            self.printer.probe_calibrate()
         elif evt == self.lcd.evt.PROBE_BACK:
             print("BACK!")
             self.printer.sendGCode('ACCEPT')

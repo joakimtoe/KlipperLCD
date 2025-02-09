@@ -137,7 +137,7 @@ class KlippySocket:
 		if not data:
 			self.connected = False
 			print("Socket closed\n")
-			exit(-1)
+			return False
 		parts = data.split('\x03')
 		parts[0] = self.socket_data + parts[0]
 		self.socket_data = parts.pop()
@@ -245,6 +245,7 @@ class PrinterData:
 		self.current_position = xyze_t()
 		self.gcm              = None
 		self.z_offset         = 0
+		self.z_requested      = 0
 		self.thermalManager   = {
 			'temp_bed': {'celsius': 20, 'target': 120},
 			'temp_hotend': [{'celsius': 20, 'target': 120}],
@@ -399,7 +400,12 @@ class PrinterData:
 		self.sendGCode(gc)
 
 	def probe_adjust(self, change):
-		gc = 'TESTZ Z={}'.format(change)
+		if change > 0:
+			strchange = "+{}".format(change)
+		else:
+			strchange = str(change)
+
+		gc = 'SET_GCODE_OFFSET Z_ADJUST={} MOVE=1'.format(strchange)
 		print(gc)
 		self.sendGCode(gc)
 
@@ -513,6 +519,7 @@ class PrinterData:
 
 		self.gcm = data['gcode_move']
 		self.z_offset = self.gcm['homing_origin'][2] #z offset
+		self.z_requested = data['gcode_move']['gcode_position'][2] #requested Z position
 		self.flow_percentage = self.gcm['extrude_factor'] * 100 #flow rate percent
 		self.absolute_moves = self.gcm['absolute_coordinates'] #absolute or relative
 		self.absolute_extrude = self.gcm['absolute_extrude'] #absolute or relative

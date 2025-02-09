@@ -60,6 +60,7 @@ class _printerData():
     y_pos           = None
     z_pos           = None
     z_offset        = None
+    z_requested     = None
     file_name       = None
     
     max_velocity           = None
@@ -100,6 +101,8 @@ class LCDEvents():
 
 
 class LCD:
+    leveling_step=None
+
     def __init__(self, port=None, baud=115200, callback=None):
         self.addr_func_map = {
             0x1002: self._MainPage,          
@@ -366,9 +369,21 @@ class LCD:
         if data.bed != self.printer.bed or data.bed_target != self.printer.bed_target:
             self.write("main.bedtemp.txt=\"%d / %d\"" % (data.bed, data.bed_target))
 
-        if self.probe_mode and data.z_pos != self.printer.z_pos:
-            self.write("leveldata.z_offset.val=%d" % (int)(data.z_pos * 100))
+        if self.probe_mode:
+            self.write("leveldata.z_offset.val=%d" % (int)(data.z_offset * 100))
             #self.write("adjustzoffset.z_offset.val=%d" % (int)(data.z_pos * 100))
+
+        if self.leveling_step is not None:
+            if self.leveling_step == 1:
+                if data.hotend >= int(data.hotend_target-1) and data.bed >= int(data.bed_target-1):
+                    self.write("leveling.tm0.en=1")
+                    self.leveling_step = 2
+            if self.leveling_step == 2:
+                if data.z_requested == 0:
+                    self.write("page leveldata_36")
+                    self.leveling_step = None
+
+
 
         #if self.speed_adjusting == 'PrintSpeed' and data.feedrate != self.printer.feedrate:
         #    self.write("adjustspeed.targetspeed.val=%d" % data.feedrate)
@@ -868,9 +883,9 @@ class LCD:
                 unit = - self.z_offset_unit
             
             if self.probe_mode:
-                z_pos = self.printer.z_pos + unit
-                print("Probe: z_pos %d" % z_pos)
-                self.write("leveldata.z_offset.val=%d" % (int)(pos * 100))
+                # z_pos = self.printer.z_pos + unit
+                # print("Probe: z_pos %d" % z_pos)
+                # self.write("leveldata.z_offset.val=%d" % (int)(z_pos * 100))
                 #self.write("adjustzoffset.z_offset.val=%d" % (int)(self.printer.z_pos * 100))
                 self.callback(self.evt.PROBE, unit)
             else:
@@ -902,10 +917,14 @@ class LCD:
 
         elif data[0] == 0x09: # Bed mesh leveling
             # Wait for heaters?
+            self.write("page leveling")
             self.callback(self.evt.PROBE_COMPLETE)
-            self.write("page leveldata_36")
-            self.write("leveling_36.tm0.en=0")
+            self.write("page leveling") #repeat change page to leveling, because probe_calibrate triggers event that goes back to the main page
             self.write("leveling.tm0.en=0")
+            self.leveling_step=1
+            
+            # self.write("page leveldata_36")
+            # self.write("leveling_36.tm0.en=0")
             #self.write("page warn_zoffset")
 
         elif data[0] == 0x0a:
