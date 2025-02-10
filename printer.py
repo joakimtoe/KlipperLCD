@@ -256,6 +256,8 @@ class PrinterData:
 		self.file_name              = None
 		self.status                 = None
 		self.print_time             = None
+		self.print_percent			= None
+		self.last_percent_update	= None
 		self.max_velocity           = None
 		self.max_accel              = None
 		self.minimum_cruise_ratio   = None
@@ -507,7 +509,7 @@ class PrinterData:
 			self.ks.klippyExit()
 			self.klippy_start()
 			return False
-		query = '/printer/objects/query?extruder&heater_bed&gcode_move&fan&print_stats&motion_report&toolhead'
+		query = '/printer/objects/query?extruder&heater_bed&gcode_move&fan&print_stats&motion_report&toolhead&display_status'
 		try:
 			data = self.getREST(query)['result']['status']
 		except:
@@ -570,12 +572,23 @@ class PrinterData:
 		except:
 			print("Exception 470")
 			return False
+		
+		if data['display_status']:
+			if self.print_percent is not None:
+				if int(self.print_percent*100) is not int(data['display_status']['progress']*100):
+					self.last_percent_update = time.time()
+			else:
+				self.last_percent_update = time.time()
+			self.print_percent = data['display_status']['progress']
 
 		if self.job_Info:
 			self.file_name = self.job_Info['print_stats']['filename']
 			self.status = self.job_Info['print_stats']['state']
 			self.print_time = self.job_Info['print_stats']['total_duration']
+
+		if self.job_Info:
 			self.HMI_flag.print_finish = self.getPercent() == 100.0
+
 		return Update
 
 	def getState(self):
@@ -591,9 +604,8 @@ class PrinterData:
 			return None
 
 	def getPercent(self):
-		if self.job_Info:
-			if self.job_Info['virtual_sdcard']['is_active']:
-				return self.job_Info['virtual_sdcard']['progress'] * 100
+		if self.print_percent is not None:
+			return self.print_percent*100
 		return 0
 
 	def duration(self):
@@ -601,13 +613,18 @@ class PrinterData:
 			if self.job_Info['virtual_sdcard']['is_active']:
 				return self.job_Info['print_stats']['print_duration']
 		return 0
+	
+	def timeSinceUpdate(self):
+		if self.last_percent_update is not None:
+			return time.time() - self.last_percent_update
+		return 0
 
 	def remain(self):
 		percent = self.getPercent()
-		duration = self.duration()
+		duration = self.duration() - self.timeSinceUpdate()
 		if percent:
 			total = duration / (percent / 100)
-			return total - duration
+			return total - (duration + self.timeSinceUpdate())
 		return 0
 
 	def openAndPrintFile(self, filenum):
