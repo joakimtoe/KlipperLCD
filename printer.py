@@ -6,9 +6,11 @@ import socket
 import json
 import requests
 from requests.exceptions import ConnectionError
+from json import JSONDecodeError
 import atexit
 import time
 import asyncio
+import os
 
 class xyze_t:
 	x = 0.0
@@ -135,7 +137,7 @@ class KlippySocket:
 		if not data:
 			self.connected = False
 			print("Socket closed\n")
-			exit(-1)
+			return False
 		parts = data.split('\x03')
 		parts[0] = self.socket_data + parts[0]
 		self.socket_data = parts.pop()
@@ -230,9 +232,10 @@ class PrinterData:
 	SHORT_BUILD_VERSION = "1.00"
 	CORP_WEBSITE_E = "https://www.klipper3d.org/"
 
-	def __init__(self, API_Key, URL='127.0.0.1', klippy_sock='/home/pi/printer_data/comms/klippy.sock', callback=None):
+	LED = []
+
+	def __init__(self, API_Key, URL='127.0.0.1', callback=None):
 		self.response_callback = callback
-		self.klippy_sock      = klippy_sock
 		self.BABY_Z_VAR       = 0
 		self.print_speed      = 100
 		self.flow_percentage  = 100
@@ -244,6 +247,7 @@ class PrinterData:
 		self.current_position = xyze_t()
 		self.gcm              = None
 		self.z_offset         = 0
+		self.z_requested      = 0
 		self.thermalManager   = {
 			'temp_bed': {'celsius': 20, 'target': 120},
 			'temp_hotend': [{'celsius': 20, 'target': 120}],
@@ -253,15 +257,38 @@ class PrinterData:
 		self.file_path              = None
 		self.file_name              = None
 		self.status                 = None
+		self.print_time             = None
+		self.print_percent			= None
+		self.last_percent_update	= None
 		self.max_velocity           = None
 		self.max_accel              = None
-		self.max_accel_to_decel     = None
+		self.minimum_cruise_ratio   = None
 		self.square_corner_velocity = None
 		
 		self.op = MoonrakerSocket(URL, 80, API_Key)
 		print(self.op.base_address)
 
+		# try to find klippy sock in Moonraker config or use generic value
+		info = None
+		while info is None:
+			info = self.getREST("/server/config")
+			time.sleep(1)
+
+		klippy_sock_found = False
+		if 'result' in info:
+			if 'config' in info['result']:
+				if 'server' in info['result']['config']:
+					if 'klippy_uds_address' in info['result']['config']['server']:
+						self.klippy_sock = os.path.expanduser(info['result']['config']['server']['klippy_uds_address'])
+						klippy_sock_found = True
+
+		if not klippy_sock_found:
+			self.klippy_sock = os.path.expanduser("~/printer_data/comms/klippy.sock")
+
+
 		self.klippy_start()
+
+		self.init_features()
 
 		self.event_loop = asyncio.new_event_loop()
 		threading.Thread(target=self.event_loop.run_forever, daemon=True).start()
@@ -345,9 +372,9 @@ class PrinterData:
 				if 'max_accel' in status['toolhead']:
 					if self.max_accel != status['toolhead']['max_accel']:
 						self.max_accel = status['toolhead']['max_accel']
-				if 'max_accel_to_decel' in status['toolhead']:
-					if self.max_accel_to_decel != status['toolhead']['max_accel_to_decel']:
-						self.max_accel_to_decel = status['toolhead']['max_accel_to_decel']
+				if 'minimum_cruise_ratio' in status['toolhead']:
+					if self.minimum_cruise_ratio != status['toolhead']['minimum_cruise_ratio']:
+						self.minimum_cruise_ratio = status['toolhead']['minimum_cruise_ratio']
 				if 'square_corner_velocity' in status['toolhead']:
 					if self.square_corner_velocity != status['toolhead']['square_corner_velocity']:
 						self.square_corner_velocity = status['toolhead']['square_corner_velocity']
@@ -361,6 +388,17 @@ class PrinterData:
 					if 'virtual_sdcard' in status['configfile']['config']:
 						if 'path' in status['configfile']['config']['virtual_sdcard']:
 							self.file_path = status['configfile']['config']['virtual_sdcard']['path']
+
+	def init_features(self):
+		try:
+			objects = self.getREST('/printer/objects/list')['result']['objects']
+		except:
+			print("Could not read printer features objects!")
+		
+		for obj in objects:
+			if 'led' in obj:
+				led = obj.split(' ')[1]
+				self.LED.append(led)
 
 	def ishomed(self):
 		if self.current_position.home_x and self.current_position.home_y and self.current_position.home_z:
@@ -379,7 +417,12 @@ class PrinterData:
 		self.sendGCode(gc)
 
 	def probe_adjust(self, change):
-		gc = 'TESTZ Z={}'.format(change)
+		if change > 0:
+			strchange = "+{}".format(change)
+		else:
+			strchange = str(change)
+
+		gc = 'SET_GCODE_OFFSET Z_ADJUST={} MOVE=1'.format(strchange)
 		print(gc)
 		self.sendGCode(gc)
 
@@ -436,7 +479,7 @@ class PrinterData:
 		self.Y_MAX_POS = int(volume[1])
 		self.max_velocity           = toolhead['max_velocity']
 		self.max_accel              = toolhead['max_accel']
-		self.max_accel_to_decel     = toolhead['max_accel_to_decel']
+		self.minimum_cruise_ratio   = toolhead['minimum_cruise_ratio']
 		self.square_corner_velocity = toolhead['square_corner_velocity']
 
 	def get_gcode_store(self, count=100):
@@ -481,7 +524,11 @@ class PrinterData:
 			self.ks.klippyExit()
 			self.klippy_start()
 			return False
-		query = '/printer/objects/query?extruder&heater_bed&gcode_move&fan&print_stats&motion_report&toolhead'
+		query = '/printer/objects/query?extruder&heater_bed&gcode_move&fan&print_stats&motion_report&toolhead&display_status'
+
+		if len(self.LED) > 0:
+			query = query + '&led %s' % self.LED[0]
+
 		try:
 			data = self.getREST(query)['result']['status']
 		except:
@@ -493,6 +540,7 @@ class PrinterData:
 
 		self.gcm = data['gcode_move']
 		self.z_offset = self.gcm['homing_origin'][2] #z offset
+		self.z_requested = data['gcode_move']['gcode_position'][2] #requested Z position
 		self.flow_percentage = self.gcm['extrude_factor'] * 100 #flow rate percent
 		self.absolute_moves = self.gcm['absolute_coordinates'] #absolute or relative
 		self.absolute_extrude = self.gcm['absolute_extrude'] #absolute or relative
@@ -501,6 +549,8 @@ class PrinterData:
 		self.bed = data['heater_bed'] #temperature, target
 		self.extruder = data['extruder'] #temperature, target
 		self.fan = data['fan']
+		if 'led %s' % self.LED[0] in data:
+			self.led_percentage = int(data['led %s' % self.LED[0]]['color_data'][0][3] * 256)
 		self.toolhead = data['toolhead']
 		Update = False
 		try:
@@ -530,8 +580,8 @@ class PrinterData:
 			if self.max_accel != self.toolhead['max_accel']:
 				self.max_accel = self.toolhead['max_accel']
 				Update = True
-			if self.max_accel_to_decel != self.toolhead['max_accel_to_decel']:
-				self.max_accel_to_decel = self.toolhead['max_accel_to_decel']
+			if self.minimum_cruise_ratio != self.toolhead['minimum_cruise_ratio']:
+				self.minimum_cruise_ratio = self.toolhead['minimum_cruise_ratio']
 				Update = True
 			if self.square_corner_velocity != self.toolhead['square_corner_velocity']:
 				self.square_corner_velocity = self.toolhead['square_corner_velocity']
@@ -543,11 +593,23 @@ class PrinterData:
 		except:
 			print("Exception 470")
 			return False
+		
+		if data['display_status']:
+			if self.print_percent is not None:
+				if int(self.print_percent*100) is not int(data['display_status']['progress']*100):
+					self.last_percent_update = time.time()
+			else:
+				self.last_percent_update = time.time()
+			self.print_percent = data['display_status']['progress']
 
 		if self.job_Info:
 			self.file_name = self.job_Info['print_stats']['filename']
 			self.status = self.job_Info['print_stats']['state']
+			self.print_time = self.job_Info['print_stats']['total_duration']
+
+		if self.job_Info:
 			self.HMI_flag.print_finish = self.getPercent() == 100.0
+
 		return Update
 
 	def getState(self):
@@ -563,9 +625,8 @@ class PrinterData:
 			return None
 
 	def getPercent(self):
-		if self.job_Info:
-			if self.job_Info['virtual_sdcard']['is_active']:
-				return self.job_Info['virtual_sdcard']['progress'] * 100
+		if self.print_percent is not None:
+			return self.print_percent*100
 		return 0
 
 	def duration(self):
@@ -573,13 +634,18 @@ class PrinterData:
 			if self.job_Info['virtual_sdcard']['is_active']:
 				return self.job_Info['print_stats']['print_duration']
 		return 0
+	
+	def timeSinceUpdate(self):
+		if self.last_percent_update is not None:
+			return time.time() - self.last_percent_update
+		return 0
 
 	def remain(self):
 		percent = self.getPercent()
-		duration = self.duration()
+		duration = self.duration() - self.timeSinceUpdate()
 		if percent:
 			total = duration / (percent / 100)
-			return total - duration
+			return total - (duration + self.timeSinceUpdate())
 		return 0
 
 	def openAndPrintFile(self, filenum):
@@ -606,12 +672,11 @@ class PrinterData:
 		self.flow_percentage = fl
 		self.sendGCode('M221 S%d' % fl)
 
-	def set_led(self, led):
-		self.led_percentage = led
-		if(led > 0):
-			self.sendGCode('SET_LED LED=top_LEDs WHITE=0.5 SYNC=0 TRANSMIT=1')
-		else:
-			self.sendGCode('SET_LED LED=top_LEDs WHITE=0 SYNC=0 TRANSMIT=1')
+	def set_led(self, led_power):
+		self.led_percentage = led_power
+
+		for led_name in self.LED:
+			self.sendGCode('SET_LED LED=%s WHITE=%f SYNC=0 TRANSMIT=1' % (led_name, led_power/256))
 
 	def set_fan(self, fan):
 		self.fan_percentage = fan
