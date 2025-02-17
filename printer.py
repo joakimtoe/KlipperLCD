@@ -232,6 +232,8 @@ class PrinterData:
 	SHORT_BUILD_VERSION = "1.00"
 	CORP_WEBSITE_E = "https://www.klipper3d.org/"
 
+	LED = []
+
 	def __init__(self, API_Key, URL='127.0.0.1', callback=None):
 		self.response_callback = callback
 		self.BABY_Z_VAR       = 0
@@ -285,6 +287,8 @@ class PrinterData:
 
 
 		self.klippy_start()
+
+		self.init_features()
 
 		self.event_loop = asyncio.new_event_loop()
 		threading.Thread(target=self.event_loop.run_forever, daemon=True).start()
@@ -384,6 +388,17 @@ class PrinterData:
 					if 'virtual_sdcard' in status['configfile']['config']:
 						if 'path' in status['configfile']['config']['virtual_sdcard']:
 							self.file_path = status['configfile']['config']['virtual_sdcard']['path']
+
+	def init_features(self):
+		try:
+			objects = self.getREST('/printer/objects/list')['result']['objects']
+		except:
+			print("Could not read printer features objects!")
+		
+		for obj in objects:
+			if 'led' in obj:
+				led = obj.split(' ')[1]
+				self.LED.append(led)
 
 	def ishomed(self):
 		if self.current_position.home_x and self.current_position.home_y and self.current_position.home_z:
@@ -510,6 +525,10 @@ class PrinterData:
 			self.klippy_start()
 			return False
 		query = '/printer/objects/query?extruder&heater_bed&gcode_move&fan&print_stats&motion_report&toolhead&display_status'
+
+		if len(self.LED) > 0:
+			query = query + '&led %s' % self.LED[0]
+
 		try:
 			data = self.getREST(query)['result']['status']
 		except:
@@ -530,6 +549,8 @@ class PrinterData:
 		self.bed = data['heater_bed'] #temperature, target
 		self.extruder = data['extruder'] #temperature, target
 		self.fan = data['fan']
+		if 'led %s' % self.LED[0] in data:
+			self.led_percentage = int(data['led %s' % self.LED[0]]['color_data'][0][3] * 256)
 		self.toolhead = data['toolhead']
 		Update = False
 		try:
@@ -651,12 +672,11 @@ class PrinterData:
 		self.flow_percentage = fl
 		self.sendGCode('M221 S%d' % fl)
 
-	def set_led(self, led):
-		self.led_percentage = led
-		if(led > 0):
-			self.sendGCode('SET_LED LED=top_LEDs WHITE=0.5 SYNC=0 TRANSMIT=1')
-		else:
-			self.sendGCode('SET_LED LED=top_LEDs WHITE=0 SYNC=0 TRANSMIT=1')
+	def set_led(self, led_power):
+		self.led_percentage = led_power
+
+		for led_name in self.LED:
+			self.sendGCode('SET_LED LED=%s WHITE=%f SYNC=0 TRANSMIT=1' % (led_name, led_power/256))
 
 	def set_fan(self, fan):
 		self.fan_percentage = fan

@@ -65,6 +65,7 @@ class KlipperLCD ():
         data.feedrate      = self.printer.print_speed
         data.flowrate      = self.printer.flow_percentage
         data.fan           = self.printer.thermalManager['fan_speed'][0]
+        data.led           = self.printer.led_percentage
         data.x_pos         = self.printer.current_position.x
         data.y_pos         = self.printer.current_position.y
         data.z_pos         = self.printer.current_position.z

@@ -56,6 +56,7 @@ class _printerData():
     feedrate        = None
     flowrate        = 0
     fan             = None
+    led             = None
     x_pos           = None
     y_pos           = None
     z_pos           = None
@@ -175,6 +176,7 @@ class LCD:
         self.feedrate_e = 300
         self.z_offset_unit = None
         self.light = False
+        self.fan = False
         # Adjusting speed
         self.speed_adjusting = None
         self.speed_unit = 10
@@ -368,6 +370,21 @@ class LCD:
             self.write("main.nozzletemp.txt=\"%d / %d\"" % (data.hotend, data.hotend_target))
         if data.bed != self.printer.bed or data.bed_target != self.printer.bed_target:
             self.write("main.bedtemp.txt=\"%d / %d\"" % (data.bed, data.bed_target))
+        if data.led != self.printer.led:
+            if(data.led > 0):
+                self.light=True
+                self.write("status_led2=1")
+            else: 
+                self.light=False
+                self.write("status_led2=0")
+
+        if data.fan != self.printer.fan:
+            if(data.fan > 0):
+                self.fan=True
+                self.write("set.va0.val=1")
+            else: 
+                self.fan=False
+                self.write("set.va0.val=0")
 
         if self.probe_mode:
             self.write("leveldata.z_offset.val=%d" % (int)(data.z_offset * 100))
@@ -840,8 +857,14 @@ class LCD:
         elif data[0] == 0x06: # Motor release
             self.callback(self.evt.MOTOR_OFF)
         elif data[0] == 0x07: # Fan Control
-            
-            pass
+            if self.fan == True:
+                self.fan = False
+                self.write("set.va0.val=0")
+                self.callback(self.evt.FAN, 0)
+            else:
+                self.fan = True
+                self.write("set.va0.val=1")
+                self.callback(self.evt.FAN, 100)
         elif data[0] == 0x08: 
             print("What is this???")
             pass
