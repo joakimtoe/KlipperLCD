@@ -2,6 +2,7 @@ import getopt
 import sys
 import time
 import base64
+import os
 from threading import Thread
 from datetime import timedelta
 
@@ -12,7 +13,7 @@ class KlipperLCD ():
     def __init__(self):
         self.lcd = LCD("/dev/ttyAMA0", callback=self.lcd_callback)
         self.lcd.start()
-        self.printer = PrinterData('XXXXXX', URL=("127.0.0.1"), klippy_sock='/home/pi/printer_data/comms/klippy.sock', callback=self.printer_callback)
+        self.printer = PrinterData('XXXXXX', URL=("127.0.0.1"), callback=self.printer_callback)
         self.running = False
         self.wait_probe = False
         self.thumbnail_inprogress = False
@@ -42,40 +43,45 @@ class KlipperLCD ():
         #self.lcd.start()
         Thread(target=self.periodic_update).start()
 
+    def update(self):
+        if self.wait_probe:
+            print("Zpos=%f, Zoff=%f" % (self.printer.current_position.z, self.printer.BABY_Z_VAR))
+            if self.printer.ishomed():
+                    self.wait_probe = False
+                    print("IsHomed")
+                    self.lcd.probe_mode_start()
+
+        self.printer.update_variable()
+        data = _printerData()
+        data.hotend_target = self.printer.thermalManager['temp_hotend'][0]['target']
+        data.hotend        = self.printer.thermalManager['temp_hotend'][0]['celsius']
+        data.bed_target    = self.printer.thermalManager['temp_bed']['target']
+        data.bed           = self.printer.thermalManager['temp_bed']['celsius']
+        data.state         = self.printer.getState()
+        data.percent       = self.printer.getPercent()
+        data.duration      = self.printer.duration()
+        data.remaining     = self.printer.remain()
+        data.print_time    = self.printer.print_time
+        data.feedrate      = self.printer.print_speed
+        data.flowrate      = self.printer.flow_percentage
+        data.fan           = self.printer.thermalManager['fan_speed'][0]
+        data.led           = self.printer.led_percentage
+        data.x_pos         = self.printer.current_position.x
+        data.y_pos         = self.printer.current_position.y
+        data.z_pos         = self.printer.current_position.z
+        data.z_offset      = self.printer.BABY_Z_VAR
+        data.z_requested   = self.printer.z_requested
+        data.file_name     = self.printer.file_name
+        data.max_velocity           = self.printer.max_velocity          
+        data.max_accel              = self.printer.max_accel
+        data.minimum_cruise_ratio   = self.printer.minimum_cruise_ratio
+        data.square_corner_velocity = self.printer.square_corner_velocity
+
+        self.lcd.data_update(data)
+
     def periodic_update(self):
         while self.running:
-            if self.wait_probe:
-                print("Zpos=%f, Zoff=%f" % (self.printer.current_position.z, self.printer.BABY_Z_VAR))
-                if self.printer.ishomed():
-                        self.wait_probe = False
-                        print("IsHomed")
-                        self.lcd.probe_mode_start()
-
-            self.printer.update_variable()
-            data = _printerData()
-            data.hotend_target = self.printer.thermalManager['temp_hotend'][0]['target']
-            data.hotend        = self.printer.thermalManager['temp_hotend'][0]['celsius']
-            data.bed_target    = self.printer.thermalManager['temp_bed']['target']
-            data.bed           = self.printer.thermalManager['temp_bed']['celsius']
-            data.state         = self.printer.getState()
-            data.percent       = self.printer.getPercent()
-            data.duration      = self.printer.duration()
-            data.remaining     = self.printer.remain()
-            data.feedrate      = self.printer.print_speed
-            data.flowrate      = self.printer.flow_percentage
-            data.fan           = self.printer.thermalManager['fan_speed'][0]
-            data.x_pos         = self.printer.current_position.x
-            data.y_pos         = self.printer.current_position.y
-            data.z_pos         = self.printer.current_position.z
-            data.z_offset      = self.printer.BABY_Z_VAR
-            data.file_name     = self.printer.file_name
-            data.max_velocity           = self.printer.max_velocity          
-            data.max_accel              = self.printer.max_accel             
-            data.max_accel_to_decel     = self.printer.max_accel_to_decel    
-            data.square_corner_velocity = self.printer.square_corner_velocity
-
-            self.lcd.data_update(data)
-                
+            self.update()
             time.sleep(2)
 
     def printer_callback(self, data, data_type):
@@ -94,6 +100,7 @@ class KlipperLCD ():
                 print("ERROR: gcode file not known")
             
             file = self.printer.file_path + "/" + file_name
+            file = os.path.expanduser(file)
 
             # Reading file
             print(file)
@@ -182,13 +189,25 @@ class KlipperLCD ():
                 self.wait_probe = True
             else:
                 self.printer.probe_adjust(data)
+                self.update()
         elif evt == self.lcd.evt.PROBE_COMPLETE:
             self.wait_probe = False
             print("Save settings!")
             self.printer.sendGCode('ACCEPT')
             self.printer.sendGCode('G1 F1000 Z15.0')
             print("Calibrate!")
+            # data.hotend        = self.printer.thermalManager['temp_hotend'][0]['celsius']
+            # data.bed           = self.printer.thermalManager['temp_bed']['celsius']
+            self.lcd.write("pretemp.nozzle.txt=\"%d\"" % self.printer.thermalManager['temp_hotend'][0]['target'])
+            self.lcd.write("pretemp.bed.txt=\"%d\"" % self.printer.thermalManager['temp_bed']['target'])
+            self.printer.sendGCode('M104 S120')
+            self.printer.sendGCode('M140 S65')
+            self.printer.sendGCode('G4 S10')
+            self.printer.sendGCode('M190 S65')
+            self.printer.sendGCode('M109 S120')
             self.printer.sendGCode('BED_MESH_CALIBRATE PROFILE=default METHOD=automatic')
+            self.printer.sendGCode('G28 Z')
+            self.printer.probe_calibrate()
         elif evt == self.lcd.evt.PROBE_BACK:
             print("BACK!")
             self.printer.sendGCode('ACCEPT')
@@ -203,18 +222,17 @@ class KlipperLCD ():
         elif evt == self.lcd.evt.MOTOR_OFF:
             self.printer.sendGCode('M18')
         elif evt == self.lcd.evt.ACCEL:
-            #print("SET_VELOCITY_LIMIT ACCEL=%d" % data)
             self.printer.sendGCode("SET_VELOCITY_LIMIT ACCEL=%d" % data)
-        elif evt == self.lcd.evt.ACCEL_TO_DECEL:
-            #print("SET_VELOCITY_LIMIT ACCEL_TO_DECEL=%d" % data)
-            self.printer.sendGCode("SET_VELOCITY_LIMIT ACCEL_TO_DECEL=%d" % data)
+            self.update()
+        elif evt == self.lcd.evt.MIN_CRUISE_RATIO:
+            self.printer.sendGCode("SET_VELOCITY_LIMIT MINIMUM_CRUISE_RATIO=%.2f" % data)
+            self.update()
         elif evt == self.lcd.evt.VELOCITY:
-            #print("SET_VELOCITY_LIMIT VELOCITY=%d" % data)
             self.printer.sendGCode("SET_VELOCITY_LIMIT VELOCITY=%d" % data)
+            self.update()
         elif evt == self.lcd.evt.SQUARE_CORNER_VELOCITY:
-            #print(data)
-            print("SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=%.1f" % data)
             self.printer.sendGCode("SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=%.1f" % data)
+            self.update()
         elif evt == self.lcd.evt.CONSOLE:
             self.printer.sendGCode(data)
         else:

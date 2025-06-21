@@ -52,18 +52,21 @@ class _printerData():
     percent         = None
     duration        = None
     remaining       = None
+    print_time      = None
     feedrate        = None
     flowrate        = 0
     fan             = None
+    led             = None
     x_pos           = None
     y_pos           = None
     z_pos           = None
     z_offset        = None
+    z_requested     = None
     file_name       = None
     
     max_velocity           = None
     max_accel              = None
-    max_accel_to_decel     = None
+    minimum_cruise_ratio   = None
     square_corner_velocity = None
 
 class LCDEvents():
@@ -91,7 +94,7 @@ class LCDEvents():
     PROBE_COMPLETE = 22
     PROBE_BACK     = 23
     ACCEL          = 24
-    ACCEL_TO_DECEL = 25
+    MIN_CRUISE_RATIO = 25
     VELOCITY       = 26
     SQUARE_CORNER_VELOCITY = 27
     THUMBNAIL      = 28
@@ -99,6 +102,8 @@ class LCDEvents():
 
 
 class LCD:
+    leveling_step=None
+
     def __init__(self, port=None, baud=115200, callback=None):
         self.addr_func_map = {
             0x1002: self._MainPage,          
@@ -171,6 +176,7 @@ class LCD:
         self.feedrate_e = 300
         self.z_offset_unit = None
         self.light = False
+        self.fan = False
         # Adjusting speed
         self.speed_adjusting = None
         self.speed_unit = 10
@@ -364,10 +370,37 @@ class LCD:
             self.write("main.nozzletemp.txt=\"%d / %d\"" % (data.hotend, data.hotend_target))
         if data.bed != self.printer.bed or data.bed_target != self.printer.bed_target:
             self.write("main.bedtemp.txt=\"%d / %d\"" % (data.bed, data.bed_target))
+        if data.led != self.printer.led:
+            if(data.led > 0):
+                self.light=True
+                self.write("status_led2=1")
+            else: 
+                self.light=False
+                self.write("status_led2=0")
 
-        if self.probe_mode and data.z_pos != self.printer.z_pos:
-            self.write("leveldata.z_offset.val=%d" % (int)(data.z_pos * 100))
+        if data.fan != self.printer.fan:
+            if(data.fan > 0):
+                self.fan=True
+                self.write("set.va0.val=1")
+            else: 
+                self.fan=False
+                self.write("set.va0.val=0")
+
+        if self.probe_mode:
+            self.write("leveldata.z_offset.val=%d" % (int)(data.z_offset * 100))
             #self.write("adjustzoffset.z_offset.val=%d" % (int)(data.z_pos * 100))
+
+        if self.leveling_step is not None:
+            if self.leveling_step == 1:
+                if data.hotend >= int(data.hotend_target-1) and data.bed >= int(data.bed_target-1):
+                    self.write("leveling.tm0.en=1")
+                    self.leveling_step = 2
+            if self.leveling_step == 2:
+                if data.z_requested == 0:
+                    self.write("page leveldata_36")
+                    self.leveling_step = None
+
+
 
         #if self.speed_adjusting == 'PrintSpeed' and data.feedrate != self.printer.feedrate:
         #    self.write("adjustspeed.targetspeed.val=%d" % data.feedrate)
@@ -379,8 +412,8 @@ class LCD:
         if self.adjusting_max:
             if data.max_accel != self.printer.max_accel:
                 self.write("speed_settings.accel.val=%d" % data.max_accel)
-            if data.max_accel_to_decel != self.printer.max_accel_to_decel:
-                self.write("speed_settings.accel_to_decel.val=%d" % data.max_accel_to_decel)
+            if data.minimum_cruise_ratio != self.printer.minimum_cruise_ratio:
+                self.write("speed_settings.accel_to_decel.val=%d" % int(data.minimum_cruise_ratio*100))
             if data.max_velocity != self.printer.max_velocity:
                 self.write("speed_settings.velocity.val=%d" % data.max_velocity)
             if data.square_corner_velocity != self.printer.square_corner_velocity:
@@ -405,7 +438,10 @@ class LCD:
                     self.write("page main")
                     self.is_thumbnail_written = False
                 elif (data.state == "complete"):
+                    self.write("printpause.printtime.txt=\"%d h %d min\"" % (data.print_time/3600,(data.print_time % 3600)/60))
                     self.write("page printfinish")
+                    self.is_thumbnail_written = False
+                elif (data.state == "standby"):
                     self.is_thumbnail_written = False
 
         if data != self.printer:
@@ -694,7 +730,7 @@ class LCD:
             self.adjusting_max = True
             self.write("speed_settings.t4.font=0")
             self.write("speed_settings.accel.val=%d" % self.printer.max_accel)
-            self.write("speed_settings.accel_to_decel.val=%d" % self.printer.max_accel_to_decel)
+            self.write("speed_settings.accel_to_decel.val=%d" % int(self.printer.minimum_cruise_ratio*100))
             self.write("speed_settings.velocity.val=%d" % self.printer.max_velocity)
             self.write("speed_settings.sqr_crnr_vel.val=%d" % int(self.printer.square_corner_velocity*10))
         elif data[0] == 0x43: # Max acceleration set
@@ -708,18 +744,17 @@ class LCD:
             self.write("speed_settings.accel.val=%d" % new_accel)
             
             self.callback(self.evt.ACCEL, new_accel)
-            self.printer.max_accel = new_accel
+            # self.printer.max_accel = new_accel
 
         elif data[0] == 0x12 or data[0] == 0x16: #Accel to Decel decrease / increase
-            unit = self.accel_unit
+            unit = self.speed_unit/100
             if data[0] == 0x12:
-                unit = -self.accel_unit
-            new_accel = self.printer.max_accel_to_decel + unit
-            self.write("speed_settings.accel_to_decel.val=%d" % new_accel)
+                unit = -self.speed_unit/100
+            new_accel = self.printer.minimum_cruise_ratio + unit
+            self.write("speed_settings.accel_to_decel.val=%d" % int(new_accel*100))
             
-            self.callback(self.evt.ACCEL_TO_DECEL, new_accel)
-            self.printer.max_accel_to_decel = new_accel
-
+            self.callback(self.evt.MIN_CRUISE_RATIO, new_accel)
+            # self.printer.minimum_cruise_ratio = new_accel
         elif data[0] == 0x13 or data[0] == 0x17: #Velocity decrease / increase
             unit = self.speed_unit
             if data[0] == 0x13:
@@ -728,7 +763,7 @@ class LCD:
             self.write("speed_settings.velocity.val=%d" % new_velocity)
             
             self.callback(self.evt.VELOCITY, new_velocity)
-            self.printer.max_velocity = new_velocity
+            # self.printer.max_velocity = new_velocity
 
         elif data[0] == 0x14 or data[0] == 0x18: #Square Corner Velozity decrease / increase
             unit = self.speed_unit/10
@@ -739,7 +774,7 @@ class LCD:
             self.write("speed_settings.sqr_crnr_vel.val=%d" % int(new_velocity*10))
 
             self.callback(self.evt.SQUARE_CORNER_VELOCITY, new_velocity)
-            self.printer.square_corner_velocity = new_velocity
+            # self.printer.square_corner_velocity = new_velocity
 
         else:
             print("_TempScreen: Not recognised %d" % data[0])
@@ -822,8 +857,14 @@ class LCD:
         elif data[0] == 0x06: # Motor release
             self.callback(self.evt.MOTOR_OFF)
         elif data[0] == 0x07: # Fan Control
-            
-            pass
+            if self.fan == True:
+                self.fan = False
+                self.write("set.va0.val=0")
+                self.callback(self.evt.FAN, 0)
+            else:
+                self.fan = True
+                self.write("set.va0.val=1")
+                self.callback(self.evt.FAN, 100)
         elif data[0] == 0x08: 
             print("What is this???")
             pass
@@ -865,9 +906,9 @@ class LCD:
                 unit = - self.z_offset_unit
             
             if self.probe_mode:
-                z_pos = self.printer.z_pos + unit
-                print("Probe: z_pos %d" % z_pos)
-                self.write("leveldata.z_offset.val=%d" % (int)(pos * 100))
+                # z_pos = self.printer.z_pos + unit
+                # print("Probe: z_pos %d" % z_pos)
+                # self.write("leveldata.z_offset.val=%d" % (int)(z_pos * 100))
                 #self.write("adjustzoffset.z_offset.val=%d" % (int)(self.printer.z_pos * 100))
                 self.callback(self.evt.PROBE, unit)
             else:
@@ -899,10 +940,14 @@ class LCD:
 
         elif data[0] == 0x09: # Bed mesh leveling
             # Wait for heaters?
+            self.write("page leveling")
             self.callback(self.evt.PROBE_COMPLETE)
-            self.write("page leveldata_36")
-            self.write("leveling_36.tm0.en=0")
+            self.write("page leveling") #repeat change page to leveling, because probe_calibrate triggers event that goes back to the main page
             self.write("leveling.tm0.en=0")
+            self.leveling_step=1
+            
+            # self.write("page leveldata_36")
+            # self.write("leveling_36.tm0.en=0")
             #self.write("page warn_zoffset")
 
         elif data[0] == 0x0a:
